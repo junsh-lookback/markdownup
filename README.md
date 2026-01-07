@@ -30,7 +30,7 @@ MarkdownファイルをHTMLに変換して表示する。
 
 ### 前提条件
 
-- Python 3.6以上
+- Python 3.8以上
 
 ### セットアップ
 
@@ -40,22 +40,41 @@ git clone https://github.com/yourusername/markdownup.git
 cd markdownup
 ```
 
-2. パッケージをインストール（`markdownup` コマンドを作る）:
+2. 依存パッケージをインストール:
 
+**Linux/macOS:**
 ```bash
-python -m pip install -e ".[render]"
+bash install.sh
 ```
 
-> **注意**: `[render]` オプションは必須です。これにより以下のパッケージがインストールされます：
+**Windows:**
+```cmd
+install.bat
+```
+
+または手動でインストール:
+```bash
+python -m pip install --user markdown pygments
+```
+
+> **注意**: 
 > - `markdown`: MarkdownをHTMLに変換（テーブル、目次、アンカーリンクなど）
 > - `pygments`: コードのシンタックスハイライト
 > 
-> `[render]` なしでインストールすると、簡易的な変換機能のみとなり、多くの機能が制限されます。
+> これらのパッケージがないと、簡易的な変換機能のみとなり、多くの機能が制限されます。
+
+> **重要**: `.txt` ファイルの利用が不完全な環境では、`pip install -e .` は使用できません。
+> 詳細は [INSTALL.md](INSTALL.md) を参照してください。
 
 ## 使用方法
 
 ### 基本的な起動
 
+```bash
+python markdownup.py
+```
+
+または、エイリアス/バッチファイルを設定した場合:
 ```bash
 markdownup
 ```
@@ -93,23 +112,25 @@ markdownup --restart
 
 ```bash
 # ヘルプを表示
-markdownup
+python markdownup.py
 
 # サーバーを起動（カレントディレクトリをルートとして）
-markdownup --port 8000
+python markdownup.py --port 8000
 
 # 特定のディレクトリをルートとして起動
-markdownup -d /path/to/docs
+python markdownup.py -d /path/to/docs
 
 # ホームディレクトリのnotesフォルダを公開
-markdownup --directory ~/notes
+python markdownup.py --directory ~/notes
 
 # サービスを停止
-markdownup --stop
+python markdownup.py --stop
 
 # サービスを再起動
-markdownup --restart
+python markdownup.py --restart
 ```
+
+エイリアス/バッチファイルを設定した場合は、`python markdownup.py` の代わりに `markdownup` と入力できます。
 
 ## アクセス方法
 

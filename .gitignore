@@ -21,6 +21,9 @@ wheels/
 *.egg
 MANIFEST
 
+# セットアップ時に生成される.txtファイル（暗号化される可能性があるため）
+*.egg-info/*.txt
+
 # Virtual Environment
 .venv/
 venv/
