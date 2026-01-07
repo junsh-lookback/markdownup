@@ -487,8 +487,26 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def send_markdown_as_html(self, file_path):
         """MarkdownファイルをHTMLに変換して送信"""
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                md_content = f.read()
+            # ファイルのエンコーディングを自動検出して読み込み
+            encodings_to_try = ['utf-8', 'utf-8-sig', 'shift_jis', 'cp932', 'euc-jp', 'iso-2022-jp', 'latin-1']
+            md_content = None
+            used_encoding = None
+            
+            for encoding in encodings_to_try:
+                try:
+                    with open(file_path, 'r', encoding=encoding) as f:
+                        md_content = f.read()
+                    used_encoding = encoding
+                    break
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            
+            if md_content is None:
+                # どのエンコーディングでも読めなかった場合は、バイナリモードで読み込んでエラー文字を置換
+                with open(file_path, 'rb') as f:
+                    raw_data = f.read()
+                md_content = raw_data.decode('utf-8', errors='replace')
+                used_encoding = 'utf-8 (with errors replaced)'
             
             # Mermaidブロックを一時的にプレースホルダーに置換
             mermaid_blocks = []
