@@ -890,23 +890,17 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                     SaneListExtension(),
                     AttrListExtension()
                 ]
-                # pymdownx.tildeは文字列名で追加（インストールされている場合のみ）
-                if importlib.util.find_spec("pymdownx.tilde") is not None:
-                    extensions.append('pymdownx.tilde')
+                # pymdownx.tildeもインスタンスとして追加（インストールされている場合のみ）
                 try:
-                    html_content = markdown.markdown(
-                        md_content,
-                        extensions=extensions
-                    )
-                except ModuleNotFoundError as e:
-                    if "pymdownx" not in str(e):
-                        raise
-                    # pymdownx.tildeが見つからない場合は除外して再試行
-                    safe_extensions = [ext for ext in extensions if ext != 'pymdownx.tilde']
-                    html_content = markdown.markdown(
-                        md_content,
-                        extensions=safe_extensions
-                    )
+                    from pymdownx.tilde import DeleteSubExtension
+                    extensions.append(DeleteSubExtension())
+                except ImportError:
+                    pass  # pymdownxがインストールされていない場合は無視
+                
+                html_content = markdown.markdown(
+                    md_content,
+                    extensions=extensions
+                )
             else:
                 # フォールバック: HTML変換
                 html_content = self.simple_markdown_to_html(md_content)
