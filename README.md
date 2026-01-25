@@ -287,6 +287,18 @@ pip install markdown pygments
 
 UTF-8エンコーディングで正しく配信されています。ブラウザの文字エンコーディング設定を確認してください。
 
+### `.txt`ファイルが暗号化される環境での使用
+
+セキュリティポリシー等により `.txt` ファイルが自動的に暗号化される環境では、Pythonパッケージの `entry_points.txt` が読み取れず、以下のようなエラーが発生する場合があります：
+
+```
+Error: 'utf-8' codec can't decode byte 0xd0 in position 0: invalid continuation byte
+```
+
+このエラーは `markdownup.py` 自体の問題ではなく、Python環境の問題です。markdownupでは、markdown拡張機能をインスタンスとして直接渡すことで `entry_points.txt` の検索を回避しています。
+
+通常の環境では特別な対応は不要です。
+
 ## 必須パッケージ
 
 - **markdown**: MarkdownをHTMLに変換
