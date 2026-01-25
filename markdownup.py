@@ -65,7 +65,13 @@ def githubish_slugify(value: str, separator: str = "-") -> str:
 
 try:
     import markdown
-    from markdown.extensions import fenced_code, tables, toc, codehilite
+    from markdown.extensions.fenced_code import FencedCodeExtension
+    from markdown.extensions.tables import TableExtension
+    from markdown.extensions.toc import TocExtension
+    from markdown.extensions.codehilite import CodeHiliteExtension
+    from markdown.extensions.nl2br import Nl2BrExtension
+    from markdown.extensions.sane_lists import SaneListExtension
+    from markdown.extensions.attr_list import AttrListExtension
     MARKDOWN_AVAILABLE = True
 except ImportError:
     MARKDOWN_AVAILABLE = False
@@ -873,42 +879,33 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             
             if MARKDOWN_AVAILABLE:
                 # markdown パッケージを使用
+                # 拡張機能をインスタンスとして直接渡すことで、entry_points.txt の検索を回避
+                # （暗号化環境等でentry_points.txtが読めない場合の対策）
                 extensions = [
-                    'fenced_code',
-                    'tables',
-                    'toc',
-                    'codehilite',
-                    'nl2br',
-                    'sane_lists',
-                    'attr_list'  # アンカーリンク対応
+                    FencedCodeExtension(),
+                    TableExtension(),
+                    TocExtension(slugify=githubish_slugify, separator='-'),
+                    CodeHiliteExtension(),
+                    Nl2BrExtension(),
+                    SaneListExtension(),
+                    AttrListExtension()
                 ]
+                # pymdownx.tildeは文字列名で追加（インストールされている場合のみ）
                 if importlib.util.find_spec("pymdownx.tilde") is not None:
                     extensions.append('pymdownx.tilde')
                 try:
                     html_content = markdown.markdown(
                         md_content,
-                        extensions=extensions,
-                        extension_configs={
-                            # tocが付与する見出しID（アンカー）をGitHub風に寄せる
-                            'toc': {
-                                'slugify': githubish_slugify,
-                                'separator': '-',
-                            }
-                        }
+                        extensions=extensions
                     )
                 except ModuleNotFoundError as e:
                     if "pymdownx" not in str(e):
                         raise
+                    # pymdownx.tildeが見つからない場合は除外して再試行
                     safe_extensions = [ext for ext in extensions if ext != 'pymdownx.tilde']
                     html_content = markdown.markdown(
                         md_content,
-                        extensions=safe_extensions,
-                        extension_configs={
-                            'toc': {
-                                'slugify': githubish_slugify,
-                                'separator': '-',
-                            }
-                        }
+                        extensions=safe_extensions
                     )
             else:
                 # フォールバック: HTML変換
