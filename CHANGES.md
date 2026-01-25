@@ -87,3 +87,4 @@ python "C:\path\to\markdownup.py" %*
 - `markdown` と `pygments` パッケージが必要（最適な表示のため）
 - `.txt` ファイルが暗号化される環境では `pip install -e .` は使用不可
 
+

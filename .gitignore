@@ -21,7 +21,7 @@ wheels/
 *.egg
 MANIFEST
 
-# セットアップ時に生成される.txtファイル（暗号化される可能性があるため）
+# セットアップ時に生成される.txtファイル（暗号化され使えない）
 *.egg-info/*.txt
 
 # Virtual Environment
@@ -60,7 +60,6 @@ images/
 credits*.md
 !credits.sample.md
 
-
-
-
+# memorandom for local environment
+README_local.md
 

@@ -36,3 +36,4 @@ echo "または、パスにシンボリックリンクを作成:"
 echo "  ln -s $(pwd)/markdownup.py ~/.local/bin/markdownup"
 echo "=========================================="
 
+

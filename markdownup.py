@@ -6,17 +6,19 @@ UTF-8エンコーディングでMarkdownファイルを配信します
 
 使用例:
     # サーバーを起動（HTMLに変換）
-    python markdownup.py --port 8000
+    python markdownup.py
     
     # 特定のディレクトリをルートとして起動
-    python markdownup.py --directory /path/to/docs --port 8000
-    python markdownup.py -d ~/Documents/notes -p 8080
+    python markdownup.py --directory /path/to/docs
+    python markdownup.py --header
     
     # サービス停止
     python markdownup.py --stop
-    
-    # サービス再起動
-    python markdownup.py --restart
+
+    # サービス起動（バックグラウンド）
+    python markdownup.py --start
+    python markdownup.py --start --port 8080
+    python markdownup.py --start -d ~/Documents/notes -p 8080 --header
     
     # 最適な表示を得るには
     pip install markdown pygments
@@ -32,7 +34,7 @@ import sys
 import os
 import signal
 import re
-
+import importlib.util
 
 def githubish_slugify(value: str, separator: str = "-") -> str:
     """
@@ -144,9 +146,113 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             color: #0969da;
             cursor: default;
         }}
+        
+        /* ========== 設定ボタン ========== */
+        .mdf2h-settings-btn {{
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            padding: 8px 16px;
+            font-size: 14px;
+            background-color: #f6f8fa;
+            border: 1px solid #d0d7de;
+            border-radius: 6px;
+            cursor: pointer;
+            z-index: 1000;
+            transition: all 0.2s;
+        }}
+        .mdf2h-settings-btn:hover {{
+            background-color: #e6f2ff;
+            border-color: #0969da;
+        }}
+        
+        /* ========== 設定ダイアログ ========== */
+        .mdf2h-settings-overlay {{
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+        }}
+        .mdf2h-settings-overlay.show {{
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }}
+        .mdf2h-settings-dialog {{
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 24px;
+            min-width: 320px;
+            max-width: 90%;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        }}
+        .mdf2h-settings-dialog h2 {{
+            margin: 0 0 16px 0;
+            font-size: 1.2rem;
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 8px;
+        }}
+        .mdf2h-settings-group {{
+            margin: 16px 0;
+        }}
+        .mdf2h-settings-group label {{
+            display: block;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }}
+        .mdf2h-settings-group .mdf2h-radio-group {{
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }}
+        .mdf2h-settings-group .mdf2h-radio-option {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            padding: 6px 8px;
+            border-radius: 4px;
+            transition: background-color 0.15s;
+        }}
+        .mdf2h-settings-group .mdf2h-radio-option:hover {{
+            background-color: #f6f8fa;
+        }}
+        .mdf2h-settings-group .mdf2h-radio-option input[type="radio"] {{
+            margin: 0;
+            cursor: pointer;
+        }}
+        .mdf2h-settings-group .mdf2h-radio-option span {{
+            font-size: 14px;
+        }}
+        .mdf2h-settings-buttons button {{
+            padding: 8px 16px;
+            font-size: 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }}
+        .mdf2h-settings-buttons .cancel {{
+            background-color: #f6f8fa;
+            border: 1px solid #d0d7de;
+        }}
+        .mdf2h-settings-buttons .cancel:hover {{
+            background-color: #e6f2ff;
+        }}
+        .mdf2h-settings-buttons .save {{
+            background-color: #0969da;
+            border: 1px solid #0969da;
+            color: #ffffff;
+        }}
+        .mdf2h-settings-buttons .save:hover {{
+            background-color: #0860ca;
+        }}
     </style>
     <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
         mermaid.initialize({{ startOnLoad: true }});
 
         function decodeHashId(raw) {{
@@ -167,6 +273,41 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }}
         }}
 
+        // ========== 自動リロード（更新検知） ==========
+        const AUTO_RELOAD_INTERVAL_MS = 2000;
+        let autoReloadSig = null;
+        let autoReloadTimer = null;
+
+        async function fetchSignature() {{
+            const path = window.location.pathname;
+            const url = '/__sig__?path=' + encodeURIComponent(path);
+            const response = await fetch(url, {{ cache: 'no-store' }});
+            if (!response.ok) return null;
+            return await response.json();
+        }}
+
+        async function initAutoReload() {{
+            try {{
+                const info = await fetchSignature();
+                if (!info || !info.exists) return;
+                autoReloadSig = info.sig;
+                if (autoReloadTimer) clearInterval(autoReloadTimer);
+                autoReloadTimer = setInterval(async () => {{
+                    try {{
+                        const now = await fetchSignature();
+                        if (!now || !now.exists) return;
+                        if (autoReloadSig !== null && now.sig !== autoReloadSig) {{
+                            location.reload();
+                        }}
+                    }} catch (e) {{
+                        // ignore
+                    }}
+                }}, AUTO_RELOAD_INTERVAL_MS);
+            }} catch (e) {{
+                // ignore
+            }}
+        }}
+
         // ページ読み込み後、複数のタイミングで試行
         window.addEventListener('load', () => {{
             scrollToHash();
@@ -174,6 +315,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             setTimeout(scrollToHash, 100);
             setTimeout(scrollToHash, 500);
             setTimeout(scrollToHash, 1000);
+            initAutoReload();
         }});
         window.addEventListener('hashchange', scrollToHash);
         
@@ -223,6 +365,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         
         // ========== キーボードショートカット ==========
         document.addEventListener('keydown', (e) => {{
+            // Ctrl+Alt+A: ルートへ移動
+            if (e.ctrlKey && e.altKey && !e.shiftKey && (e.key === 'a' || e.key === 'A')) {{
+                e.preventDefault();
+                window.location.href = '/';
+                return;
+            }}
+            
             // Ctrl+Alt+↑: 親ディレクトリへ移動
             if (e.ctrlKey && e.altKey && e.key === 'ArrowUp') {{
                 e.preventDefault();
@@ -242,19 +391,125 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }}
         }});
         
+        // ========== 設定ダイアログ ==========
+        const SETTINGS_KEY = 'markdownup_settings';
+        
+        function getSettings() {{
+            try {{
+                const saved = localStorage.getItem(SETTINGS_KEY);
+                if (saved) {{
+                    return JSON.parse(saved);
+                }}
+            }} catch (e) {{
+                console.warn('Failed to load settings:', e);
+            }}
+            return {{ h1h2Margin: 'none', contentMargin: 'normal' }};
+        }}
+        
+        function saveSettings(settings) {{
+            try {{
+                localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+            }} catch (e) {{
+                console.warn('Failed to save settings:', e);
+            }}
+        }}
+        
+        const marginMap = {{
+            'large': '72px',
+            'normal': '48px',
+            'small': '24px',
+            'none': '0px'
+        }};
+        
+        // グローバルスコープに公開（onclick/onchange属性から呼び出すため）
+        window.applyH1H2Margin = function(value) {{
+            const settings = getSettings();
+            settings.h1h2Margin = value;
+            saveSettings(settings);
+            document.documentElement.style.setProperty('--mdf2h-presentation-h1h2-margin', marginMap[value] || '0px');
+        }};
+        
+        window.applyContentMargin = function(value) {{
+            const settings = getSettings();
+            settings.contentMargin = value;
+            saveSettings(settings);
+            document.documentElement.style.setProperty('--mdf2h-presentation-margin', marginMap[value] || '24px');
+        }};
+        
+        window.openSettingsDialog = function() {{
+            const overlay = document.querySelector('.mdf2h-settings-overlay');
+            if (overlay) {{
+                const settings = getSettings();
+                // ラジオボタンの状態を復元
+                const h1h2Radio = document.querySelector(`input[name="h1h2margin"][value="${{settings.h1h2Margin || 'none'}}"]`);
+                if (h1h2Radio) h1h2Radio.checked = true;
+                const contentRadio = document.querySelector(`input[name="contentmargin"][value="${{settings.contentMargin || 'normal'}}"]`);
+                if (contentRadio) contentRadio.checked = true;
+                overlay.classList.add('show');
+            }}
+        }};
+        
+        window.closeSettingsDialog = function() {{
+            const overlay = document.querySelector('.mdf2h-settings-overlay');
+            if (overlay) {{
+                overlay.classList.remove('show');
+            }}
+        }};
+        
         // 初期化
         window.addEventListener('load', () => {{
             loadNavInfo();
             initFocusableElements();
         }});
+        
+        // オーバーレイクリックで閉じる
+        document.addEventListener('click', (e) => {{
+            if (e.target.classList.contains('mdf2h-settings-overlay')) {{
+                window.closeSettingsDialog();
+            }}
+        }});
+        
+        // Escキーで閉じる
+        document.addEventListener('keydown', (e) => {{
+            if (e.key === 'Escape') {{
+                window.closeSettingsDialog();
+            }}
+        }});
     </script>
 </head>
 <body>
+    {settings_section}
     <article class="markdown-body">
         {content}
     </article>
 </body>
 </html>"""
+
+# 設定ボタンとダイアログのHTML（ルートディレクトリのみに表示）
+SETTINGS_SECTION_HTML = """<button class="mdf2h-settings-btn" onclick="openSettingsDialog()">⚙️ 設定</button>
+    <div class="mdf2h-settings-overlay">
+        <div class="mdf2h-settings-dialog">
+            <h2>設定</h2>
+            <div class="mdf2h-settings-group">
+                <label>プレゼン時の全体マージン（H1/H2含む）</label>
+                <div class="mdf2h-radio-group">
+                    <label class="mdf2h-radio-option"><input type="radio" name="h1h2margin" value="large" onchange="applyH1H2Margin(this.value)"><span>大きく (72px)</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="h1h2margin" value="normal" onchange="applyH1H2Margin(this.value)"><span>普通 (48px)</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="h1h2margin" value="small" onchange="applyH1H2Margin(this.value)"><span>小さく (24px)</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="h1h2margin" value="none" onchange="applyH1H2Margin(this.value)"><span>なし (0px)</span></label>
+                </div>
+            </div>
+            <div class="mdf2h-settings-group">
+                <label>プレゼン時の配下コンテンツマージン</label>
+                <div class="mdf2h-radio-group">
+                    <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="large" onchange="applyContentMargin(this.value)"><span>大きく (72px)</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="normal" onchange="applyContentMargin(this.value)"><span>普通 (48px)</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="small" onchange="applyContentMargin(this.value)"><span>小さく (24px)</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="none" onchange="applyContentMargin(this.value)"><span>なし (0px)</span></label>
+                </div>
+            </div>
+        </div>
+    </div>"""
 
 
 class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
@@ -289,6 +544,12 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         if path_str == '__nav__':
             nav_path = query_params.get('path', [''])[0]
             self.send_nav_info(nav_path)
+            return
+
+        # 0.6. __sig__ エンドポイント（更新検知用シグネチャを返す）
+        if path_str == '__sig__':
+            sig_path = query_params.get('path', [''])[0]
+            self.send_sig_info(sig_path)
             return
         
         # 1. ディレクトリの場合
@@ -408,6 +669,76 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             
         except Exception as e:
             self._send_json({'error': str(e)})
+
+    def send_sig_info(self, requested_path):
+        """更新検知用のシグネチャをJSONで返す（ファイル/ディレクトリ）"""
+        import hashlib
+
+        try:
+            # ブラウザの pathname（例: "/foo/bar.md" や "/foo/"）を想定
+            p = (requested_path or '').split('?', 1)[0]
+            p = urllib.parse.unquote(p)
+            p = p.lstrip('/')
+
+            base_dir = Path('.').resolve()
+            target = (Path('.') / p) if p else Path('.')
+
+            # パストラバーサルを拒否（base_dir配下のみ許可）
+            try:
+                target_resolved = target.resolve()
+                target_resolved.relative_to(base_dir)
+            except Exception:
+                self._send_json({'exists': False})
+                return
+
+            if target_resolved.is_dir():
+                # ディレクトリ一覧に影響するもの（直下の非隠しディレクトリ + .md ファイル）でシグネチャ生成
+                items = list(target_resolved.iterdir())
+                dirs = [d for d in items if d.is_dir() and not d.name.startswith('.')]
+                files = [f for f in items if f.is_file() and f.suffix.lower() == '.md']
+
+                entries = []
+                for d in dirs:
+                    try:
+                        entries.append(('d', d.name, d.stat().st_mtime_ns))
+                    except Exception:
+                        entries.append(('d', d.name, 0))
+                for f in files:
+                    try:
+                        entries.append(('f', f.name, f.stat().st_mtime_ns))
+                    except Exception:
+                        entries.append(('f', f.name, 0))
+
+                entries.sort(key=lambda x: x[1].lower())
+                h = hashlib.sha1()
+                try:
+                    h.update(b'DIR\0')
+                    h.update(str(target_resolved.stat().st_mtime_ns).encode('ascii', errors='ignore'))
+                    h.update(b'\n')
+                except Exception:
+                    pass
+                for kind, name, mtime_ns in entries:
+                    h.update(kind.encode('ascii', errors='ignore'))
+                    h.update(b'\0')
+                    h.update(name.encode('utf-8', errors='replace'))
+                    h.update(b'\0')
+                    h.update(str(mtime_ns).encode('ascii', errors='ignore'))
+                    h.update(b'\n')
+
+                self._send_json({'exists': True, 'kind': 'dir', 'sig': h.hexdigest()})
+                return
+
+            if target_resolved.is_file():
+                try:
+                    sig = str(target_resolved.stat().st_mtime_ns)
+                except Exception:
+                    sig = '0'
+                self._send_json({'exists': True, 'kind': 'file', 'sig': sig})
+                return
+
+            self._send_json({'exists': False})
+        except Exception as e:
+            self._send_json({'exists': False, 'error': str(e)})
     
     def _send_json(self, data):
         """JSONレスポンスを送信"""
@@ -473,9 +804,14 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         
         content += '</div>'
         
+        # ルートディレクトリのみ設定ボタンを表示
+        is_root = str(rel_path) == '.'
+        settings_section = SETTINGS_SECTION_HTML if is_root else ''
+        
         html = HTML_TEMPLATE.format(
             title=f'Index of {display_path}',
-            content=content
+            content=content,
+            settings_section=settings_section
         )
         
         self.send_response(200)
@@ -488,7 +824,8 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         """MarkdownファイルをHTMLに変換して送信"""
         try:
             # ファイルのエンコーディングを自動検出して読み込み
-            encodings_to_try = ['utf-8', 'utf-8-sig', 'shift_jis', 'cp932', 'euc-jp', 'iso-2022-jp', 'latin-1']
+            # utf-8-sig を先に試行してBOM付きUTF-8を正しく処理する
+            encodings_to_try = ['utf-8-sig', 'utf-8', 'shift_jis', 'cp932', 'euc-jp', 'iso-2022-jp', 'latin-1']
             md_content = None
             used_encoding = None
             
@@ -522,27 +859,57 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 flags=re.DOTALL
             )
             
+            # 強制改ページマーカー: 行頭から8つ以上のハイフンのみの行を検出
+            # 印刷時にpage-breakとして機能するdivに変換
+            # 注: markdownは ---（3つ以上）を<hr>に変換するため、
+            #     8つ以上のハイフンをHTMLコメント形式のプレースホルダーに置換
+            #     （___はMarkdownで斜体として解釈されるため使用不可）
+            md_content = re.sub(
+                r'^-{8,}$',
+                '<!--PAGEBREAK8-->',
+                md_content,
+                flags=re.MULTILINE
+            )
+            
             if MARKDOWN_AVAILABLE:
                 # markdown パッケージを使用
-                html_content = markdown.markdown(
-                    md_content,
-                    extensions=[
-                        'fenced_code',
-                        'tables',
-                        'toc',
-                        'codehilite',
-                        'nl2br',
-                        'sane_lists',
-                        'attr_list'  # アンカーリンク対応
-                    ],
-                    extension_configs={
-                        # tocが付与する見出しID（アンカー）をGitHub風に寄せる
-                        'toc': {
-                            'slugify': githubish_slugify,
-                            'separator': '-',
+                extensions = [
+                    'fenced_code',
+                    'tables',
+                    'toc',
+                    'codehilite',
+                    'nl2br',
+                    'sane_lists',
+                    'attr_list'  # アンカーリンク対応
+                ]
+                if importlib.util.find_spec("pymdownx.tilde") is not None:
+                    extensions.append('pymdownx.tilde')
+                try:
+                    html_content = markdown.markdown(
+                        md_content,
+                        extensions=extensions,
+                        extension_configs={
+                            # tocが付与する見出しID（アンカー）をGitHub風に寄せる
+                            'toc': {
+                                'slugify': githubish_slugify,
+                                'separator': '-',
+                            }
                         }
-                    }
-                )
+                    )
+                except ModuleNotFoundError as e:
+                    if "pymdownx" not in str(e):
+                        raise
+                    safe_extensions = [ext for ext in extensions if ext != 'pymdownx.tilde']
+                    html_content = markdown.markdown(
+                        md_content,
+                        extensions=safe_extensions,
+                        extension_configs={
+                            'toc': {
+                                'slugify': githubish_slugify,
+                                'separator': '-',
+                            }
+                        }
+                    )
             else:
                 # フォールバック: HTML変換
                 html_content = self.simple_markdown_to_html(md_content)
@@ -553,6 +920,17 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                     f'<!--MERMAID_PLACEHOLDER_{i}-->',
                     f'<pre class="mermaid">{block}</pre>'
                 )
+            
+            # 強制改ページマーカーを復元
+            # markdownライブラリが<p>タグで囲む場合があるため、両方のパターンを処理
+            html_content = html_content.replace(
+                '<p><!--PAGEBREAK8--></p>',
+                '<div class="page-break"></div>'
+            )
+            html_content = html_content.replace(
+                '<!--PAGEBREAK8-->',
+                '<div class="page-break"></div>'
+            )
             
             # 見出しIDは markdown.extensions.toc が付与する（extension_configsでslugifyを調整）
             
@@ -659,27 +1037,19 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         }}
         
         /* ロゴ表示（画面右上、印刷時は非表示） */
-        /* 本文領域(max-width:980px)の右側空白に収まるサイズ */
+        /* 固定サイズ・固定位置（ブラウザの拡大縮小に影響されない） */
         .mdf2h-logo {{
             position: fixed;
-            top: 20px;
-            right: calc((100vw - 980px) / 2 - 180px);
-            max-height: 100px;
-            max-width: 180px;
+            top: 40px;
+            right: 40px;
+            width: 180px;
+            height: auto;
             opacity: 0.8;
             z-index: 1000;
             transition: opacity 0.2s;
         }}
         .mdf2h-logo:hover {{
             opacity: 1;
-        }}
-        /* 画面幅が狭い場合は右端に配置 */
-        @media (max-width: 1300px) {{
-            .mdf2h-logo {{
-                right: 20px;
-                max-height: 60px;
-                max-width: 100px;
-            }}
         }}
         @media print {{
             .mdf2h-logo {{
@@ -695,12 +1065,17 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             display: none;
         }}
         
+        /* 強制改ページマーカー - 画面では非表示 */
+        .page-break {{
+            display: none;
+        }}
+        
         /* 印刷用スタイル */
         @media print {{
             /* ページ設定 */
             @page {{
-                size: A4;
-                margin: 20mm 15mm 25mm 15mm;
+                size: auto;
+                margin: 15mm 12mm 18mm 12mm;
                 @bottom-center {{
                     content: counter(page) " / " counter(pages);
                     font-size: 10pt;
@@ -811,10 +1186,192 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             table, pre, blockquote {{
                 page-break-inside: avoid;
             }}
+            
+            /* 強制改ページマーカー（--------） */
+            .page-break {{
+                display: block;
+                page-break-before: always;
+                height: 0;
+                margin: 0;
+                padding: 0;
+                border: none;
+            }}
+        }}
+
+        /* ========== コードブロック: Copyボタン ==========
+           - クリックでコピーはボタン押下で実行
+           - 印刷時は非表示 */
+        .mdf2h-codewrap {{
+            position: relative;
+        }}
+        .mdf2h-copy-btn {{
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            padding: 6px;
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(27, 31, 36, 0.2);
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.9);
+            color: #57606a;
+            cursor: pointer;
+            z-index: 5;
+            transition: all 0.15s;
+        }}
+        .mdf2h-copy-btn:hover {{
+            background: rgba(255, 255, 255, 1);
+            color: #24292f;
+        }}
+        .mdf2h-copy-btn svg {{
+            width: 16px;
+            height: 16px;
+        }}
+
+        /* ========== トースト通知 ==========
+           - pointer-events:none で操作を邪魔しない */
+        .mdf2h-toast {{
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            max-width: min(420px, calc(100vw - 32px));
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.5;
+            color: #fff;
+            background: rgba(0, 0, 0, 0.86);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 160ms ease, transform 160ms ease;
+            z-index: 2000;
+            pointer-events: none;
+        }}
+        .mdf2h-toast.show {{
+            opacity: 1;
+            transform: translateY(0);
+        }}
+        .mdf2h-toast.error {{
+            background: rgba(160, 0, 0, 0.9);
+        }}
+        @media print {{
+            .mdf2h-copy-btn,
+            .mdf2h-toast {{
+                display: none !important;
+            }}
+        }}
+
+        /* ========== プレゼンテーションモード ========== */
+        :root {{
+            --mdf2h-presentation-margin: 48px;
+            --mdf2h-presentation-h1h2-margin: 0px;
+        }}
+        body.mdf2h-presentation-mode {{
+            overflow-y: scroll;
+        }}
+        body.mdf2h-presentation-mode .markdown-body {{
+            max-width: 100%;
+            margin: 0;
+            padding: 8px 12px;
+        }}
+        /* H1/H2のマージン（設定で変更可能） */
+        body.mdf2h-presentation-mode .markdown-body h1,
+        body.mdf2h-presentation-mode .markdown-body h2 {{
+            margin-left: var(--mdf2h-presentation-h1h2-margin);
+            margin-right: var(--mdf2h-presentation-h1h2-margin);
+        }}
+        /* H1/H2配下のコンテンツは少し左右にマージンを追加（設定で変更可能） */
+        body.mdf2h-presentation-mode .markdown-body h3,
+        body.mdf2h-presentation-mode .markdown-body h4,
+        body.mdf2h-presentation-mode .markdown-body h5,
+        body.mdf2h-presentation-mode .markdown-body h6,
+        body.mdf2h-presentation-mode .markdown-body p,
+        body.mdf2h-presentation-mode .markdown-body ul,
+        body.mdf2h-presentation-mode .markdown-body ol,
+        body.mdf2h-presentation-mode .markdown-body blockquote,
+        body.mdf2h-presentation-mode .markdown-body pre,
+        body.mdf2h-presentation-mode .markdown-body table,
+        body.mdf2h-presentation-mode .markdown-body dl {{
+            margin-left: var(--mdf2h-presentation-margin);
+            margin-right: var(--mdf2h-presentation-margin);
+        }}
+        body.mdf2h-presentation-mode .markdown-body table {{
+            width: calc(100% - var(--mdf2h-presentation-margin) * 2);
+            max-width: calc(100% - var(--mdf2h-presentation-margin) * 2);
+            display: table;
+        }}
+        body.mdf2h-presentation-mode .markdown-body pre.mermaid,
+        body.mdf2h-presentation-mode .markdown-body .mermaid {{
+            max-width: calc(100% - var(--mdf2h-presentation-margin) * 2);
+            width: calc(100% - var(--mdf2h-presentation-margin) * 2);
+            box-sizing: border-box;
+        }}
+        body.mdf2h-presentation-mode .markdown-body pre.mermaid {{
+            padding: 0;
+        }}
+        body.mdf2h-presentation-mode .markdown-body svg {{
+            display: block;
+            width: 100% !important;
+            max-width: 100% !important;
+            height: auto;
+        }}
+        .mdf2h-presentation-hidden {{
+            display: none !important;
+        }}
+        /* コードブロックラッパーにマージン適用（Copyボタンも追従） */
+        body.mdf2h-presentation-mode .markdown-body .mdf2h-codewrap {{
+            margin-left: var(--mdf2h-presentation-margin);
+            margin-right: var(--mdf2h-presentation-margin);
+        }}
+        body.mdf2h-presentation-mode .markdown-body .mdf2h-codewrap pre {{
+            margin-left: 0;
+            margin-right: 0;
+        }}
+        
+        /* ========== インラインTOC（H1の下に表示） ========== */
+        .mdf2h-inline-toc {{
+            margin: 16px 0 24px 0;
+            padding: 0;
+            background-color: transparent;
+        }}
+        .mdf2h-inline-toc ul {{
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }}
+        .mdf2h-inline-toc li {{
+            margin: 6px 0;
+            line-height: 1.6;
+            display: flex;
+            align-items: baseline;
+        }}
+        .mdf2h-inline-toc li::before {{
+            content: "•";
+            color: #57606a;
+            margin-right: 8px;
+            font-size: 1.25em;
+        }}
+        .mdf2h-inline-toc a {{
+            color: #24292f;
+            text-decoration: none;
+            font-size: 1.25em;
+        }}
+        .mdf2h-inline-toc a:hover {{
+            text-decoration: underline;
+            color: #0969da;
+        }}
+        @media print {{
+            .mdf2h-inline-toc {{
+                display: none;
+            }}
         }}
     </style>
     <script type="module">
-        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
         mermaid.initialize({{ startOnLoad: true }});
 
         function decodeHashId(raw) {{
@@ -835,6 +1392,41 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             }}
         }}
 
+        // ========== 自動リロード（更新検知） ==========
+        const AUTO_RELOAD_INTERVAL_MS = 2000;
+        let autoReloadSig = null;
+        let autoReloadTimer = null;
+
+        async function fetchSignature() {{
+            const path = window.location.pathname;
+            const url = '/__sig__?path=' + encodeURIComponent(path);
+            const response = await fetch(url, {{ cache: 'no-store' }});
+            if (!response.ok) return null;
+            return await response.json();
+        }}
+
+        async function initAutoReload() {{
+            try {{
+                const info = await fetchSignature();
+                if (!info || !info.exists) return;
+                autoReloadSig = info.sig;
+                if (autoReloadTimer) clearInterval(autoReloadTimer);
+                autoReloadTimer = setInterval(async () => {{
+                    try {{
+                        const now = await fetchSignature();
+                        if (!now || !now.exists) return;
+                        if (autoReloadSig !== null && now.sig !== autoReloadSig) {{
+                            location.reload();
+                        }}
+                    }} catch (e) {{
+                        // ignore
+                    }}
+                }}, AUTO_RELOAD_INTERVAL_MS);
+            }} catch (e) {{
+                // ignore
+            }}
+        }}
+
         // ページ読み込み後、複数のタイミングで試行
         window.addEventListener('load', () => {{
             scrollToHash();
@@ -842,8 +1434,53 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             setTimeout(scrollToHash, 100);
             setTimeout(scrollToHash, 500);
             setTimeout(scrollToHash, 1000);
+            initAutoReload();
         }});
         window.addEventListener('hashchange', scrollToHash);
+        
+        // ========== インラインTOC（H1の下にH2一覧） ==========
+        function insertTocUnderH1() {{
+            const article = document.querySelector('.markdown-body');
+            if (!article) return;
+            
+            // 既にTOCが挿入されていたらスキップ
+            if (article.querySelector('.mdf2h-inline-toc')) return;
+            
+            // H1を探す
+            const h1 = article.querySelector('h1');
+            if (!h1) return;
+            
+            // H2を全て取得
+            const h2s = article.querySelectorAll('h2');
+            if (h2s.length === 0) return;
+            
+            // TOCを作成
+            const nav = document.createElement('nav');
+            nav.className = 'mdf2h-inline-toc';
+            const ul = document.createElement('ul');
+            
+            h2s.forEach((h2, index) => {{
+                // 「目次」という見出しはスキップ
+                const text = h2.textContent.trim();
+                if (text === '目次' || text === 'TOC' || text === 'Table of Contents') return;
+                
+                // IDがなければ生成
+                if (!h2.id) {{
+                    h2.id = 'toc-h2-' + index;
+                }}
+                const li = document.createElement('li');
+                const a = document.createElement('a');
+                a.href = '#' + h2.id;
+                a.textContent = text;
+                li.appendChild(a);
+                ul.appendChild(li);
+            }});
+            
+            nav.appendChild(ul);
+            
+            // H1の直後に挿入
+            h1.insertAdjacentElement('afterend', nav);
+        }}
         
         // 印刷前に目次とcreditsを生成
         const headerMode = {header_mode};
@@ -860,6 +1497,110 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             img.alt = 'Logo';
             img.onerror = () => {{ img.style.display = 'none'; }}; // 画像がない場合は非表示
             document.body.appendChild(img);
+        }}
+
+        // ========== コードブロックCopy機能 ==========
+        let toastTimer = null;
+        function showToast(message, ok = true) {{
+            let toast = document.querySelector('.mdf2h-toast');
+            if (!toast) {{
+                toast = document.createElement('div');
+                toast.className = 'mdf2h-toast';
+                document.body.appendChild(toast);
+            }}
+            toast.textContent = message;
+            toast.classList.remove('error');
+            if (!ok) toast.classList.add('error');
+            toast.classList.add('show');
+
+            if (toastTimer) window.clearTimeout(toastTimer);
+            toastTimer = window.setTimeout(() => {{
+                toast.classList.remove('show');
+            }}, 1400);
+        }}
+
+        async function copyTextToClipboard(text) {{
+            // Clipboard API（https/localhost）を優先
+            try {{
+                if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {{
+                    await navigator.clipboard.writeText(text);
+                    return true;
+                }}
+            }} catch (e) {{
+                // fallbackへ
+            }}
+
+            // execCommand fallback
+            try {{
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', '');
+                ta.style.position = 'fixed';
+                ta.style.top = '-1000px';
+                ta.style.left = '-1000px';
+                document.body.appendChild(ta);
+                ta.select();
+                const ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                return !!ok;
+            }} catch (e) {{
+                return false;
+            }}
+        }}
+
+        function initCodeCopyButtons() {{
+            const article = document.querySelector('.markdown-body');
+            if (!article) return;
+
+            const pres = Array.from(article.querySelectorAll('pre'));
+            pres.forEach((pre) => {{
+                // Mermaidは除外
+                if (pre.classList.contains('mermaid')) return;
+                // 印刷用の要素内は除外
+                if (pre.closest('.mdf2h-print-toc') || pre.closest('.mdf2h-print-credits')) return;
+                // 既にラップ済みならスキップ
+                if (pre.closest('.mdf2h-codewrap')) return;
+
+                const code = pre.querySelector('code');
+                const textSource = code || pre;
+                const text = (textSource.textContent || '');
+                if (!text.trim()) return;
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'mdf2h-codewrap';
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'mdf2h-copy-btn';
+                btn.title = 'Copy';
+                // クリップボードアイコン (GitHub Octicons copy)
+                const copyIcon = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"></path><path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path></svg>';
+                // チェックアイコン (GitHub Octicons check)
+                const checkIcon = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z"></path></svg>';
+                btn.innerHTML = copyIcon;
+
+                btn.addEventListener('click', async (ev) => {{
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    const ok = await copyTextToClipboard(textSource.textContent || '');
+                    if (ok) {{
+                        btn.innerHTML = checkIcon;
+                        btn.style.color = '#1a7f37';
+                        showToast('Copied!', true);
+                        window.setTimeout(() => {{ 
+                            btn.innerHTML = copyIcon;
+                            btn.style.color = '';
+                        }}, 900);
+                    }} else {{
+                        showToast('Copy failed', false);
+                    }}
+                }});
+
+                // DOM差し替え: pre を wrapper に移動してボタンを重ねる
+                pre.parentNode.insertBefore(wrapper, pre);
+                wrapper.appendChild(btn);
+                wrapper.appendChild(pre);
+            }});
         }}
         
         async function generatePrintContent() {{
@@ -980,9 +1721,6 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             
             // H1〜H4すべてを対象にする（印刷用目次内は除外）
             const headings = article.querySelectorAll('h1, h2, h3, h4');
-            // #region agent log
-            fetch('http://127.0.0.1:7245/ingest/54d91893-1d23-4153-b808-ff93fbb17adf',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{location:'initFoldableHeadings',message:'all headings found',data:{{total:headings.length}},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'}})}} ).catch(()=>{{}});
-            // #endregion
             let count = 0;
             headings.forEach((heading) => {{
                 // 印刷用目次内の見出しは除外
@@ -997,11 +1735,11 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 heading.addEventListener('mouseenter', () => {{ hoveredHeading = heading; }});
                 heading.addEventListener('mouseleave', () => {{ hoveredHeading = null; }});
                 // クリックで展開/折りたたみ
-                heading.addEventListener('click', () => {{ toggleHeading(heading); }});
+                heading.addEventListener('click', () => {{
+                    setActiveHeading(heading);
+                    toggleHeading(heading);
+                }});
             }});
-            // #region agent log
-            fetch('http://127.0.0.1:7245/ingest/54d91893-1d23-4153-b808-ff93fbb17adf',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{location:'initFoldableHeadings:done',message:'H1-H4 tabindex set',data:{{enabledCount:count}},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'}})}} ).catch(()=>{{}});
-            // #endregion
         }}
         
         function toggleHeading(heading) {{
@@ -1019,6 +1757,15 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 }}
                 sibling.style.display = isCollapsed ? 'none' : '';
                 sibling = sibling.nextElementSibling;
+            }}
+        }}
+
+        function setActiveHeading(heading) {{
+            if (!heading) return;
+            heading.focus();
+            const index = focusableElements.indexOf(heading);
+            if (index >= 0) {{
+                currentFocusIndex = index;
             }}
         }}
         
@@ -1041,12 +1788,22 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         }}
         
         function toggleHoverHeading() {{
-            // Ctrl+Enter: フォーカス中の見出しを優先、なければホバー中の見出しを操作
+            // フォーカス中の見出しを優先、なければホバー中の見出しを操作
+            const active = document.activeElement;
+            if (active && active.matches && active.matches('.markdown-body h1[tabindex="0"], .markdown-body h2[tabindex="0"], .markdown-body h3[tabindex="0"], .markdown-body h4[tabindex="0"]')) {{
+                toggleHeading(active);
+                return true;
+            }}
+            if (hoveredHeading) {{
+                setActiveHeading(hoveredHeading);
+                toggleHeading(hoveredHeading);
+                return true;
+            }}
             if (currentFocusIndex >= 0 && focusableElements[currentFocusIndex]) {{
                 toggleHeading(focusableElements[currentFocusIndex]);
-            }} else if (hoveredHeading) {{
-                toggleHeading(hoveredHeading);
+                return true;
             }}
+            return false;
         }}
         
         // ========== フォーカス移動機能 ==========
@@ -1057,20 +1814,11 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             // H1〜H4すべてを対象にする（tabindex="0"が設定された要素のみ）
             focusableElements = Array.from(document.querySelectorAll('.markdown-body h1[tabindex="0"], .markdown-body h2[tabindex="0"], .markdown-body h3[tabindex="0"], .markdown-body h4[tabindex="0"]'));
             currentFocusIndex = -1;
-            // #region agent log
-            fetch('http://127.0.0.1:7245/ingest/54d91893-1d23-4153-b808-ff93fbb17adf',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{location:'initFocusableElements',message:'focusableElements initialized',data:{{count:focusableElements.length,elements:focusableElements.map(el=>el.tagName+':'+el.textContent.substring(0,20))}},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B'}})}} ).catch(()=>{{}});
-            // #endregion
         }}
         
         function focusNext() {{
-            // #region agent log
-            fetch('http://127.0.0.1:7245/ingest/54d91893-1d23-4153-b808-ff93fbb17adf',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{location:'focusNext:entry',message:'focusNext called',data:{{beforeIndex:currentFocusIndex,elementsCount:focusableElements.length,firstEl:focusableElements[0]?focusableElements[0].tagName+':'+focusableElements[0].textContent.substring(0,20):'NONE'}},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C,D,E'}})}} ).catch(()=>{{}});
-            // #endregion
             if (focusableElements.length === 0) return;
             currentFocusIndex = (currentFocusIndex + 1) % focusableElements.length;
-            // #region agent log
-            fetch('http://127.0.0.1:7245/ingest/54d91893-1d23-4153-b808-ff93fbb17adf',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{location:'focusNext:after',message:'focus target',data:{{afterIndex:currentFocusIndex,targetEl:focusableElements[currentFocusIndex]?focusableElements[currentFocusIndex].tagName+':'+focusableElements[currentFocusIndex].textContent.substring(0,20):'NONE'}},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C,E'}})}} ).catch(()=>{{}});
-            // #endregion
             focusableElements[currentFocusIndex].focus();
             focusableElements[currentFocusIndex].scrollIntoView({{ behavior: 'smooth', block: 'center' }});
         }}
@@ -1081,12 +1829,329 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             focusableElements[currentFocusIndex].focus();
             focusableElements[currentFocusIndex].scrollIntoView({{ behavior: 'smooth', block: 'center' }});
         }}
+
+        // ========== 設定読み込み ==========
+        const SETTINGS_KEY = 'markdownup_settings';
+        
+        function getSettings() {{
+            try {{
+                const saved = localStorage.getItem(SETTINGS_KEY);
+                if (saved) {{
+                    return JSON.parse(saved);
+                }}
+            }} catch (e) {{
+                console.warn('Failed to load settings:', e);
+            }}
+            return {{ h1h2Margin: 'none', contentMargin: 'normal' }};
+        }}
+        
+        function applyPresentationMarginSetting() {{
+            const settings = getSettings();
+            const marginMap = {{
+                'large': '72px',
+                'normal': '48px',
+                'small': '24px',
+                'none': '0px'
+            }};
+            const h1h2Margin = marginMap[settings.h1h2Margin] || '0px';
+            const contentMargin = marginMap[settings.contentMargin] || '24px';
+            document.documentElement.style.setProperty('--mdf2h-presentation-h1h2-margin', h1h2Margin);
+            document.documentElement.style.setProperty('--mdf2h-presentation-margin', contentMargin);
+        }}
+
+        // ========== プレゼンテーションモード ==========
+        let presentationMode = false;
+        let presentationSections = [];
+        let presentationIndex = 0;
+
+        function isPresentationBoundary(el) {{
+            return el && (el.tagName === 'H1' || el.tagName === 'H2');
+        }}
+
+        function buildPresentationSections() {{
+            const article = document.querySelector('.markdown-body');
+            if (!article) return [];
+            const children = Array.from(article.children);
+            const sections = [];
+            let current = null;
+
+            children.forEach((el) => {{
+                if (el.classList.contains('mdf2h-print-toc') || el.classList.contains('mdf2h-print-credits')) {{
+                    return;
+                }}
+                if (isPresentationBoundary(el)) {{
+                    if (current && current.length > 0) {{
+                        sections.push(current);
+                    }}
+                    current = [el];
+                    return;
+                }}
+                if (!current) {{
+                    current = [el];
+                }} else {{
+                    current.push(el);
+                }}
+            }});
+            if (current && current.length > 0) {{
+                sections.push(current);
+            }}
+            return sections.length > 0 ? sections : [children];
+        }}
+
+        function clearPresentationHidden() {{
+            const article = document.querySelector('.markdown-body');
+            if (!article) return;
+            article.querySelectorAll('.mdf2h-presentation-hidden').forEach((el) => {{
+                el.classList.remove('mdf2h-presentation-hidden');
+            }});
+        }}
+
+        function applyPresentationVisibility() {{
+            const sections = presentationSections;
+            if (!sections || sections.length === 0) return;
+            sections.forEach((section, index) => {{
+                const hidden = index !== presentationIndex;
+                section.forEach((el) => {{
+                    if (hidden) {{
+                        el.classList.add('mdf2h-presentation-hidden');
+                    }} else {{
+                        el.classList.remove('mdf2h-presentation-hidden');
+                    }}
+                }});
+            }});
+            const activeSection = sections[presentationIndex] || [];
+            // プレゼンモードでは常にページトップから表示を開始
+            // scrollIntoView(smooth)はDOMの変更タイミングとずれるため使用しない
+            window.scrollTo(0, 0);
+            const sectionHeights = activeSection.slice(0, 6).map((el) => {{
+                const r = el.getBoundingClientRect();
+                return {{ tag: el.tagName, height: Math.round(r.height) }};
+            }});
+            const article = document.querySelector('.markdown-body');
+            const activeHeading = activeSection.find(el => el.tagName === 'H1' || el.tagName === 'H2');
+            let articleRect = null;
+            let articleStyle = null;
+            let headingRect = null;
+            let headingStyle = null;
+            if (article) {{
+                const rect = article.getBoundingClientRect();
+                articleRect = {{ width: Math.round(rect.width), left: Math.round(rect.left), right: Math.round(rect.right) }};
+                const style = window.getComputedStyle(article);
+                articleStyle = {{
+                    paddingLeft: style.paddingLeft,
+                    paddingRight: style.paddingRight,
+                    marginLeft: style.marginLeft,
+                    marginRight: style.marginRight,
+                    maxWidth: style.maxWidth,
+                    width: style.width
+                }};
+            }}
+            if (activeHeading) {{
+                const rect = activeHeading.getBoundingClientRect();
+                headingRect = {{
+                    width: Math.round(rect.width),
+                    left: Math.round(rect.left),
+                    right: Math.round(rect.right),
+                    top: Math.round(rect.top),
+                    bottom: Math.round(rect.bottom)
+                }};
+                const style = window.getComputedStyle(activeHeading);
+                headingStyle = {{
+                    marginTop: style.marginTop,
+                    marginBottom: style.marginBottom,
+                    scrollMarginTop: style.scrollMarginTop
+                }};
+            }}
+            const hiddenElements = Array.from(document.querySelectorAll('.mdf2h-presentation-hidden'));
+            const hiddenSample = hiddenElements[0];
+            const hiddenSampleStyle = hiddenSample ? window.getComputedStyle(hiddenSample).display : null;
+            const bodyHasClass = document.body ? document.body.classList.contains('mdf2h-presentation-mode') : false;
+            const visibleH2 = [];
+            const h2s = Array.from(document.querySelectorAll('.markdown-body h2'));
+            h2s.forEach((h2) => {{
+                const display = window.getComputedStyle(h2).display;
+                if (display !== 'none') {{
+                    visibleH2.push((h2.textContent || '').trim());
+                }}
+            }});
+            const activeTables = activeSection.filter(el => el.tagName === 'TABLE');
+            if (activeTables.length > 0) {{
+                const tableRects = activeTables.slice(0, 2).map(t => {{
+                    const r = t.getBoundingClientRect();
+                    const style = window.getComputedStyle(t);
+                    return {{
+                        width: Math.round(r.width),
+                        left: Math.round(r.left),
+                        right: Math.round(r.right),
+                        styleWidth: style.width,
+                        marginLeft: style.marginLeft,
+                        marginRight: style.marginRight
+                    }};
+                }});
+            }}
+            if (docEl) {{
+            }}
+
+            let minLeft = null;
+            let maxRight = null;
+            let minLeftTag = null;
+            let maxRightTag = null;
+            activeSection.forEach((el) => {{
+                const r = el.getBoundingClientRect();
+                if (minLeft === null || r.left < minLeft) {{
+                    minLeft = r.left;
+                    minLeftTag = el.tagName;
+                }}
+                if (maxRight === null || r.right > maxRight) {{
+                    maxRight = r.right;
+                    maxRightTag = el.tagName;
+                }}
+            }});
+            const specialNodes = [];
+            activeSection.forEach((el) => {{
+                if (el.matches && (el.matches('table, pre, code, svg, .mermaid'))) {{
+                    specialNodes.push(el);
+                }}
+                el.querySelectorAll && el.querySelectorAll('table, pre, code, svg, .mermaid').forEach((node) => {{
+                    specialNodes.push(node);
+                }});
+            }});
+            if (specialNodes.length > 0) {{
+                const sample = specialNodes.slice(0, 4).map((node) => {{
+                    const r = node.getBoundingClientRect();
+                    const style = window.getComputedStyle(node);
+                    return {{
+                        tag: node.tagName,
+                        left: Math.round(r.left),
+                        right: Math.round(r.right),
+                        width: Math.round(r.width),
+                        styleWidth: style.width,
+                        styleMarginLeft: style.marginLeft,
+                        styleMarginRight: style.marginRight,
+                        display: style.display,
+                        attrWidth: node.getAttribute ? node.getAttribute('width') : null,
+                        attrHeight: node.getAttribute ? node.getAttribute('height') : null,
+                        viewBox: node.getAttribute ? node.getAttribute('viewBox') : null
+                    }};
+                }});
+            }}
+
+            const blockSample = [];
+            activeSection.forEach((el) => {{
+                if (!el.tagName) return;
+                const tag = el.tagName;
+                if (!['H1','H2','H3','P','UL','OL','TABLE','PRE','DIV','BLOCKQUOTE'].includes(tag)) return;
+                if (blockSample.length >= 6) return;
+                const r = el.getBoundingClientRect();
+                const style = window.getComputedStyle(el);
+                blockSample.push({{
+                    tag,
+                    left: Math.round(r.left),
+                    right: Math.round(r.right),
+                    width: Math.round(r.width),
+                    paddingLeft: style.paddingLeft,
+                    marginLeft: style.marginLeft,
+                    paddingRight: style.paddingRight,
+                    marginRight: style.marginRight
+                }});
+            }});
+            if (blockSample.length > 0) {{
+            }}
+
+            if (articleRect) {{
+                let maxRatio = 0;
+                let maxTag = null;
+                activeSection.forEach((el) => {{
+                    const r = el.getBoundingClientRect();
+                    const ratio = r.width / articleRect.width;
+                    if (ratio > maxRatio) {{
+                        maxRatio = ratio;
+                        maxTag = el.tagName;
+                    }}
+                }});
+            }}
+        }}
+
+        function findSectionIndexForElement(el) {{
+            if (!el || !presentationSections.length) return -1;
+            // 直接セクションに含まれるか確認
+            let idx = presentationSections.findIndex(section => section.includes(el));
+            if (idx >= 0) return idx;
+            // 親要素を辿ってセクションを探す
+            let parent = el.parentElement;
+            while (parent && parent !== document.body) {{
+                idx = presentationSections.findIndex(section => section.includes(parent));
+                if (idx >= 0) return idx;
+                parent = parent.parentElement;
+            }}
+            return -1;
+        }}
+        
+        // プレゼンモード中のアンカーリンク処理
+        function handlePresentationLinkClick(e) {{
+            if (!presentationMode) return;
+            
+            const link = e.target.closest('a[href^="#"]');
+            if (!link) return;
+            
+            const targetId = link.getAttribute('href').slice(1);
+            const targetEl = document.getElementById(targetId);
+            if (!targetEl) return;
+            
+            // ターゲット要素が含まれるセクションを探す
+            const sectionIndex = findSectionIndexForElement(targetEl);
+            if (sectionIndex >= 0 && sectionIndex !== presentationIndex) {{
+                e.preventDefault();
+                presentationIndex = sectionIndex;
+                applyPresentationVisibility();
+                // スクロールしてターゲットを表示
+                setTimeout(() => {{
+                    targetEl.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+                }}, 100);
+            }}
+        }}
+
+        function togglePresentationMode() {{
+            presentationMode = !presentationMode;
+            document.body.classList.toggle('mdf2h-presentation-mode', presentationMode);
+            if (presentationMode) {{
+                // 設定から余白を適用
+                applyPresentationMarginSetting();
+                presentationSections = buildPresentationSections();
+                const active = document.activeElement;
+                const targetIndex = findSectionIndexForElement(active);
+                presentationIndex = targetIndex >= 0 ? targetIndex : 0;
+                applyPresentationVisibility();
+            }} else {{
+                clearPresentationHidden();
+            }}
+        }}
+
+        function gotoPresentation(delta) {{
+            if (!presentationMode || presentationSections.length === 0) return;
+            const nextIndex = presentationIndex + delta;
+            if (nextIndex < 0 || nextIndex >= presentationSections.length) return;
+            presentationIndex = nextIndex;
+            applyPresentationVisibility();
+        }}
         
         // ========== キーボードショートカット ==========
         document.addEventListener('keydown', (e) => {{
+            // Ctrl+Alt+A: ルートへ移動
+            if (e.ctrlKey && e.altKey && !e.shiftKey && (e.key === 'a' || e.key === 'A')) {{
+                e.preventDefault();
+                window.location.href = '/';
+                return;
+            }}
+            
             // Ctrl+Alt+矢印: ナビゲーション
             if (e.ctrlKey && e.altKey) {{
                 switch(e.key) {{
+                    case 'p':
+                    case 'P':
+                        e.preventDefault();
+                        togglePresentationMode();
+                        return;
                     case 'ArrowUp':
                         e.preventDefault();
                         navigateToParent();
@@ -1099,32 +2164,68 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                         e.preventDefault();
                         navigateToPrev();
                         return;
-                    case 'r':
-                    case 'R':
+                    case 't':
+                    case 'T':
                         e.preventDefault();
                         toggleAllH2();
                         return;
                 }}
             }}
             
-            // Ctrl+Enter: ホバー中の見出しを折りたたみ
-            if (e.ctrlKey && e.key === 'Enter') {{
-                e.preventDefault();
-                toggleHoverHeading();
-                return;
+            // Enter: フォーカス/ホバー中の見出しを折りたたみ
+            if (!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && e.key === 'Enter') {{
+                if (toggleHoverHeading()) {{
+                    e.preventDefault();
+                    return;
+                }}
             }}
             
-            // ↑↓キー（修飾キーなし）: フォーカス移動
+            // Ctrl+Enter: フォーカス/ホバー中の見出しを折りたたみ
+            if (e.ctrlKey && e.key === 'Enter') {{
+                if (toggleHoverHeading()) {{
+                    e.preventDefault();
+                    return;
+                }}
+            }}
+            
+            // ↑↓キー（修飾キーなし）: プレゼンモードではスクロール、通常モードではフォーカス移動
             if (!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {{
-                if (e.key === 'ArrowDown') {{
-                    e.preventDefault();
-                    focusNext();
-                }} else if (e.key === 'ArrowUp') {{
-                    e.preventDefault();
-                    focusPrev();
+                if (presentationMode) {{
+                    // プレゼンモード: ↑↓でスクロール、←→でページ移動
+                    if (e.key === 'ArrowDown') {{
+                        e.preventDefault();
+                        window.scrollBy({{ top: 100, behavior: 'smooth' }});
+                    }} else if (e.key === 'ArrowUp') {{
+                        e.preventDefault();
+                        window.scrollBy({{ top: -100, behavior: 'smooth' }});
+                    }} else if (e.key === 'ArrowRight') {{
+                        e.preventDefault();
+                        gotoPresentation(1);
+                    }} else if (e.key === 'ArrowLeft') {{
+                        e.preventDefault();
+                        gotoPresentation(-1);
+                    }}
+                }} else {{
+                    // 通常モード: ↑↓でフォーカス移動
+                    if (e.key === 'ArrowDown') {{
+                        e.preventDefault();
+                        focusNext();
+                    }} else if (e.key === 'ArrowUp') {{
+                        e.preventDefault();
+                        focusPrev();
+                    }}
                 }}
             }}
         }});
+        
+        // ========== 設定ダイアログ ==========
+        function saveSettings(settings) {{
+            try {{
+                localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+            }} catch (e) {{
+                console.warn('Failed to save settings:', e);
+            }}
+        }}
         
         // 初期化
         window.addEventListener('load', () => {{
@@ -1132,7 +2233,12 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             initFoldableHeadings();
             initFocusableElements();
             insertLogo();
+            initCodeCopyButtons();
+            insertTocUnderH1();
         }});
+        
+        // プレゼンモード中のアンカーリンククリック処理
+        document.addEventListener('click', handlePresentationLinkClick);
     </script>
 </head>
 <body>
@@ -1145,6 +2251,9 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     @staticmethod
     def simple_markdown_to_html(md_content):
         """Markdown→HTML変換"""
+        def apply_strikethrough(text):
+            return re.sub(r'~~(.*?)~~', r'<del>\1</del>', text)
+
         lines = md_content.split('\n')
         html_lines = []
         in_code_block = False
@@ -1170,22 +2279,22 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             
             # 見出し
             if stripped.startswith('#### '):
-                html_lines.append(f'<h4>{stripped[5:]}</h4>')
+                html_lines.append(f'<h4>{apply_strikethrough(stripped[5:])}</h4>')
             elif stripped.startswith('### '):
-                html_lines.append(f'<h3>{stripped[4:]}</h3>')
+                html_lines.append(f'<h3>{apply_strikethrough(stripped[4:])}</h3>')
             elif stripped.startswith('## '):
-                html_lines.append(f'<h2>{stripped[3:]}</h2>')
+                html_lines.append(f'<h2>{apply_strikethrough(stripped[3:])}</h2>')
             elif stripped.startswith('# '):
-                html_lines.append(f'<h1>{stripped[2:]}</h1>')
+                html_lines.append(f'<h1>{apply_strikethrough(stripped[2:])}</h1>')
             # リスト
             elif stripped.startswith('- ') or stripped.startswith('* '):
-                html_lines.append(f'<li>{stripped[2:]}</li>')
+                html_lines.append(f'<li>{apply_strikethrough(stripped[2:])}</li>')
             # 空行
             elif line.strip() == '':
                 html_lines.append('<br>')
             # 通常のテキスト
             else:
-                html_lines.append(f'<p>{line}</p>')
+                html_lines.append(f'<p>{apply_strikethrough(line)}</p>')
         
         return '\n'.join(html_lines)
 
@@ -1285,6 +2394,9 @@ def get_pid_using_port(port):
 
 def stop_service():
     """起動中のすべてのサービスを停止"""
+    import subprocess
+    import time
+    
     success_count = 0
     stopped_ports = set()
     
@@ -1298,7 +2410,17 @@ def stop_service():
                     pid = int(f.read().strip())
                 
                 try:
-                    os.kill(pid, signal.SIGTERM)
+                    if sys.platform == 'win32':
+                        # Windows: taskkill /F /PID で強制終了（確認プロンプトなし）
+                        subprocess.run(
+                            ['taskkill', '/F', '/PID', str(pid)],
+                            capture_output=True,
+                            creationflags=subprocess.CREATE_NO_WINDOW
+                        )
+                    else:
+                        # Linux/macOS: signal.SIGTERM
+                        os.kill(pid, signal.SIGTERM)
+                    
                     print(f"[OK] サービスを停止しました (PID: {pid}, ポート: {port})")
                     success_count += 1
                     stopped_ports.add(port)
@@ -1326,7 +2448,17 @@ def stop_service():
         pid = get_pid_using_port(port)
         if pid:
             try:
-                os.kill(pid, signal.SIGTERM)
+                if sys.platform == 'win32':
+                    # Windows: taskkill /F /PID で強制終了
+                    subprocess.run(
+                        ['taskkill', '/F', '/PID', str(pid)],
+                        capture_output=True,
+                        creationflags=subprocess.CREATE_NO_WINDOW
+                    )
+                else:
+                    # Linux/macOS: signal.SIGTERM
+                    os.kill(pid, signal.SIGTERM)
+                
                 print(f"[OK] ポート {port} を使用中のサービスを停止しました (PID: {pid})")
                 success_count += 1
             except (ProcessLookupError, OSError):
@@ -1340,98 +2472,151 @@ def stop_service():
     return 0
 
 
-def restart_service(args):
-    """サービスを再起動"""
-    pid, saved_port = read_pid(args.port if args.port != DEFAULT_PORT else None)
-    
-    if pid is None:
-        print("[!] 実行中のサービスが見つかりません")
-        print("   新しくサービスを起動します...\n")
-        return None  # 新規起動へ
-    
-    print(f"[*] サービスを再起動します (PID: {pid}, ポート: {saved_port})")
-    
-    # まず停止
+def start_service(args):
+    """サービスをバックグラウンドで起動（-d/--directory でルートを指定可能）"""
+    import subprocess
+    import time
+
+    # 子プロセスは --start を付けずに起動する（再帰起動防止）
     try:
-        try:
-            os.kill(pid, signal.SIGTERM)
-            print(f"[OK] 既存のサービスを停止しました")
-        except (ProcessLookupError, OSError):
-            print(f"[!] 既存のプロセスは既に終了しています")
-        remove_pid(saved_port)
-        
-        # 少し待機
-        import time
-        time.sleep(1)
-        
-        # ポート指定がない場合は保存されていたポートを使用
-        if args.port == DEFAULT_PORT and saved_port is not None:
-            args.port = saved_port
-        
-        return args  # 起動処理へ
-        
-    except ProcessLookupError:
-        print(f"[!] PID {pid} のプロセスが見つかりません")
-        print("   PIDファイルをクリアして新しくサービスを起動します...\n")
-        remove_pid()
-        return None  # 新規起動へ
-    except Exception as e:
-        print(f"[ERROR] サービスの停止に失敗しました: {e}")
+        target_dir = resolve_target_directory(getattr(args, 'directory', '.'))
+    except Exception:
+        target_dir = Path(getattr(args, 'directory', '.'))
+
+    if not target_dir.exists():
+        print(f"[ERROR] ディレクトリが見つかりません: {getattr(args, 'directory', '.')}")
+        return 1
+    if not target_dir.is_dir():
+        print(f"[ERROR] 指定されたパスはディレクトリではありません: {getattr(args, 'directory', '.')}")
         return 1
 
+    script_path = Path(__file__).resolve()
+    cmd = [
+        sys.executable,
+        str(script_path),
+        '--_child',
+        '--port', str(args.port),
+        '--directory', str(target_dir),
+    ]
+    if getattr(args, 'header', False):
+        cmd.append('--header')
 
-def parse_arguments():
-    """コマンドライン引数をパース"""
+    # デタッチ実行時はログに出力してトラブルシュートできるようにする
+    logs_dir = PID_BASE_DIR / 'logs'
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    log_path = logs_dir / f"markdownup_{int(time.time())}.log"
+
+    start_time_ns = time.time_ns()
+    with open(log_path, 'ab') as log_fp:
+        popen_kwargs = {
+            'stdin': subprocess.DEVNULL,
+            'stdout': log_fp,
+            'stderr': log_fp,
+        }
+        if sys.platform == 'win32':
+            creationflags = 0
+            creationflags |= getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+            creationflags |= getattr(subprocess, 'DETACHED_PROCESS', 0)
+            creationflags |= getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+            popen_kwargs['creationflags'] = creationflags
+        else:
+            popen_kwargs['start_new_session'] = True
+            popen_kwargs['close_fds'] = True
+
+        proc = subprocess.Popen(cmd, **popen_kwargs)
+
+    print(f"[OK] バックグラウンドで起動しました (PID: {proc.pid})")
+    print(f"   ログ: {log_path}")
+
+    # 子プロセスが起動してポートを書き込むまで少し待って表示用のURLを推測する
+    detected_port = None
+    for _ in range(30):  # 最大3秒
+        try:
+            if LATEST_PID_FILE.exists():
+                st = LATEST_PID_FILE.stat()
+                if st.st_mtime_ns >= start_time_ns:
+                    txt = LATEST_PID_FILE.read_text(encoding='utf-8').strip()
+                    if txt.isdigit():
+                        detected_port = int(txt)
+                        break
+        except Exception:
+            pass
+        time.sleep(0.1)
+
+    if detected_port:
+        print(f"   ローカル: http://localhost:{detected_port}")
+    else:
+        print(f"   ローカル: http://localhost:{args.port} (指定ポート、または代替ポート)")
+    print("   停止するには: python markdownup.py --stop")
+    return 0
+
+
+def build_argument_parser():
+    """argparse のパーサを構築（ヘルプ表示と実行時で共通化）"""
     parser = argparse.ArgumentParser(
         description='MarkdownファイルをHTML化するHTTPサーバー',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用例:
   %(prog)s                      # ヘルプを表示
-  %(prog)s --port 8080          # サーバーを起動（ポート8080）
-  %(prog)s -d /path/to/docs     # 指定ディレクトリをルートとして起動
+  %(prog)s --header             # フォアグラウンド起動（カレントディレクトリを表示）
+  %(prog)s --start              # サービスをバックグラウンドで起動（-d ./ と同じ）
+  %(prog)s --start --port 8080  # バックグラウンド起動（ポート8080）
+  %(prog)s --start -d /path/to/docs --header  # 指定ディレクトリで起動（ヘッダー有効）
   %(prog)s --stop               # サービスを停止
-  %(prog)s --restart            # サービスを再起動
 
 機能:
-  MarkdownをHTMLに変換して美しく表示（Mermaid図表対応）
+  MarkdownをHTMLに変換表示（Mermaid図表対応）
   
 最適な表示を得るには:
   pip install markdown pygments
         """)
-    
+
     parser.add_argument(
         '--port', '-p',
         type=int,
         default=DEFAULT_PORT,
-        help=f'ポート番号（デフォルト: {DEFAULT_PORT}）'
+        help=f'ポート番号（--start と併用。デフォルト: {DEFAULT_PORT}）'
     )
-    
+
+    # 内部用: --start で起動した子プロセス識別（ヘルプには出さない）
+    parser.add_argument(
+        '--_child',
+        action='store_true',
+        help=argparse.SUPPRESS
+    )
+
     parser.add_argument(
         '--directory', '-d',
         type=str,
         default='.',
         help='サーバーのルートディレクトリ（デフォルト: カレントディレクトリ）'
     )
-    
+
     parser.add_argument(
         '--stop',
         action='store_true',
         help='実行中のすべてのサービスを停止'
     )
-    
+
     parser.add_argument(
-        '--restart',
+        '--start',
         action='store_true',
-        help='実行中のサービスを再起動'
+        help='バックグラウンドでサービスを起動（-d/--directory, --header を併用可）'
     )
-    
+
     parser.add_argument(
         '--header',
         action='store_true',
         help='画面右上にロゴ（images/logo.png）を表示、印刷時にcredits.mdを表示'
     )
-    
+
+    return parser
+
+
+def parse_arguments():
+    """コマンドライン引数をパース"""
+    parser = build_argument_parser()
     return parser.parse_args()
 
 
@@ -1471,12 +2656,85 @@ def find_available_port(preferred_port):
     return None
 
 
-def signal_handler(sig, frame):
-    """シグナルハンドラー（Ctrl+C処理）"""
-    print("\n\n[*] サーバーを停止しています...")
-    # ポート番号を取得するために、httpd オブジェクトが必要だが
-    # ここでは PID ファイルを特定できないため、終了時に cleanup される
-    os._exit(0)
+def get_working_directory():
+    """シェルのカレントディレクトリを取得（MINGW64のUNCパス対応）"""
+    # MINGW64/Git Bashでは PWD 環境変数にシェルのcwdが設定される
+    pwd = os.environ.get('PWD', '')
+    if pwd.startswith('//') or pwd.startswith('\\\\'):
+        # UNCパス形式の場合はそのまま使用
+        return Path(pwd)
+    # 通常はPythonのcwdを使用
+    return Path.cwd()
+
+
+def resolve_target_directory(directory_arg: str) -> Path:
+    """-d/--directory の値を実際のルートディレクトリへ解決（UNC配慮）"""
+    if directory_arg == '.':
+        target_dir = get_working_directory()
+    elif Path(directory_arg).is_absolute():
+        target_dir = Path(directory_arg)
+    else:
+        # 相対パスの場合はシェルのcwdを基準にする
+        target_dir = get_working_directory() / directory_arg
+
+    # UNCパス以外は resolve() で正規化
+    if not str(target_dir).startswith('//') and not str(target_dir).startswith('\\\\'):
+        target_dir = target_dir.resolve()
+
+    return target_dir
+
+
+def is_directory_only_invocation(argv):
+    """-d/--directory だけが指定された起動かどうか（値のトークンは除外して判定）"""
+    has_directory = False
+    other_options = []
+
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok in ('-d', '--directory'):
+            has_directory = True
+            i += 2  # 値もスキップ
+            continue
+        if tok.startswith('--directory='):
+            has_directory = True
+            i += 1
+            continue
+        if tok.startswith('-'):
+            other_options.append(tok)
+        i += 1
+
+    return has_directory and len(other_options) == 0
+
+
+def is_port_without_start_invocation(argv):
+    """--start なしで --port/-p が指定された起動かどうか（値のトークンは除外して判定）"""
+    has_start = False
+    has_port = False
+    has_child = False
+
+    i = 0
+    while i < len(argv):
+        tok = argv[i]
+        if tok == '--start':
+            has_start = True
+            i += 1
+            continue
+        if tok == '--_child':
+            has_child = True
+            i += 1
+            continue
+        if tok in ('-p', '--port'):
+            has_port = True
+            i += 2  # 値もスキップ
+            continue
+        if tok.startswith('--port='):
+            has_port = True
+            i += 1
+            continue
+        i += 1
+
+    return has_port and not has_start and not has_child
 
 
 def main():
@@ -1484,46 +2742,36 @@ def main():
     # 引数なしの場合はヘルプを表示
     # ただし argcomplete の補完実行（_ARGCOMPLETE=1）時はここで抜けると補完が動かないため除外
     if len(sys.argv) == 1 and os.environ.get("_ARGCOMPLETE") != "1":
-        parser = argparse.ArgumentParser(
-            description='Markdownファイルを正しい文字エンコーディングで配信するHTTPサーバー',
-            formatter_class=argparse.RawDescriptionHelpFormatter,
-            epilog="""
-使用例:
-  %(prog)s                      # ヘルプを表示
-  %(prog)s --port 8080          # サーバーを起動（ポート8080）
-  %(prog)s -d /path/to/docs     # 指定ディレクトリをルートとして起動
-  %(prog)s --stop               # すべてのサービスを停止
-  %(prog)s --restart            # サービスを再起動
-
-機能:
-  MarkdownをHTMLに変換（Mermaid図表対応）
-  
-最適な表示を得るには:
-  pip install markdown pygments
-        """)
+        parser = build_argument_parser()
         parser.print_help()
         return
+
+    # -d/--directory 単体での起動は廃止（ヘルプ表示に寄せる）
+    # ただし argcomplete の補完実行時はここで抜けない
+    if os.environ.get("_ARGCOMPLETE") != "1":
+        if is_directory_only_invocation(sys.argv[1:]):
+            parser = build_argument_parser()
+            parser.print_help()
+            return
+        if is_port_without_start_invocation(sys.argv[1:]):
+            parser = build_argument_parser()
+            parser.print_help()
+            return
     
     args = parse_arguments()
-    
-    # Ctrl+Cのシグナルハンドラーを設定
-    signal.signal(signal.SIGINT, signal_handler)
-    if sys.platform != 'win32':
-        signal.signal(signal.SIGTERM, signal_handler)
     
     # --stop オプションの処理
     if args.stop:
         return stop_service()
-    
-    # --restart オプションの処理
-    if args.restart:
-        result = restart_service(args)
-        if result == 1:
-            return 1  # エラー
-        # result が None または args の場合は起動処理を続行
+
+    # --start オプションの処理
+    if args.start:
+        return start_service(args)
     
     # ディレクトリの検証と移動
-    target_dir = Path(args.directory).resolve()
+    # MINGW64/Git Bash環境でUNCパス（//server/share/...）をサポート
+    target_dir = resolve_target_directory(args.directory)
+    
     if not target_dir.exists():
         print(f"[ERROR] ディレクトリが見つかりません: {args.directory}")
         return 1
@@ -1580,7 +2828,6 @@ def main():
                 print(f"   ネットワーク: http://192.168.1.13:{port}")
                 print(f"\n[!] ブラウザでアクセスしてMarkdownファイルを表示できます")
                 print(f"   停止するには: python markdownup.py --stop")
-                print(f"   再起動するには: python markdownup.py --restart")
                 print("   または Ctrl+C を押してください\n")
                 print("=" * 60 + "\n")
                 
@@ -1605,11 +2852,15 @@ def main():
                 print(f"\n[!] ブラウザでアクセスしてMarkdownファイルを表示できます")
                 print(f"   (IPv4/IPv6 デュアルスタック対応)")
                 print(f"   停止するには: python markdownup.py --stop")
-                print(f"   再起動するには: python markdownup.py --restart")
                 print("   または Ctrl+C を押してください\n")
                 print("=" * 60 + "\n")
                 
                 httpd.serve_forever()
+    except KeyboardInterrupt:
+        # Ctrl+C による終了
+        print("\n\n[*] サーバーを停止しています...")
+        remove_pid(port)
+        return 0
     except Exception as e:
         print(f"\n[ERROR] {e}")
         remove_pid(port)

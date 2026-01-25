@@ -25,6 +25,7 @@ MarkdownファイルをHTMLに変換して表示する。
 - 見出し折りたたみ機能（クリックまたはキーボードで展開/折りたたみ）
 - 印刷機能（目次自動生成、ページ番号、見出しマーク）
 - ロゴ表示機能（--header オプション）
+- 表示自動更新（元ファイル更新時に自動リロード）
 
 ## インストール
 
@@ -68,42 +69,44 @@ python -m pip install --user markdown pygments
 
 ## 使用方法
 
-### 基本的な起動
+### 基本的な起動（フォアグラウンド）
 
 ```bash
-python markdownup.py
-```
-
-または、エイリアス/バッチファイルを設定した場合:
-```bash
-markdownup
+markdownup --header
 ```
 
 MarkdownをHTMLに変換して、ブラウザで直接表示します。拡張機能は不要です。
 
 - デフォルトポートは **8000** です
-- ポート番号を変更するには `--port` オプションを使用します
+- 指定ポートが使用中の場合は代替ポートを自動選択します
+- `--port/-p` は **`--start`（バックグラウンド起動）に付随するオプション**です（フォアグラウンド起動では指定できません）
 
 ### ディレクトリ指定
 
-特定のディレクトリをルートとして起動できます：
+特定のディレクトリをルートとして起動したい場合は、`--start` と併用します：
 
 ```bash
-markdownup --directory /path/to/docs
+markdownup --start --directory /path/to/docs
 ```
 
 ### サービス管理
+
+**起動（バックグラウンド）:**
+
+```bash
+markdownup --start
+```
+
+ディレクトリ・ポート・ヘッダー表示を指定する例：
+
+```bash
+markdownup --start --port 8080 -d ./docs --header
+```
 
 **停止:**
 
 ```bash
 markdownup --stop
-```
-
-**再起動:**
-
-```bash
-markdownup --restart
 ```
 
 **即座に停止**: サーバー実行中に **Ctrl+C** を押すことで即座に停止できます（確認不要）。
@@ -112,32 +115,29 @@ markdownup --restart
 
 ```bash
 # ヘルプを表示
-python markdownup.py
+markdownup
 
-# サーバーを起動（カレントディレクトリをルートとして）
-python markdownup.py --port 8000
+# フォアグラウンド起動（カレントディレクトリをルートとして）
+markdownup --header
 
-# 特定のディレクトリをルートとして起動
-python markdownup.py -d /path/to/docs
+# バックグラウンド起動（カレントディレクトリをルートとして）
+markdownup --start
 
-# ホームディレクトリのnotesフォルダを公開
-python markdownup.py --directory ~/notes
+# バックグラウンド起動（特定ディレクトリ・ポート・ヘッダー表示）
+markdownup --start --port 8080 -d ./docs --header
 
 # サービスを停止
-python markdownup.py --stop
-
-# サービスを再起動
-python markdownup.py --restart
+markdownup --stop
 ```
-
-エイリアス/バッチファイルを設定した場合は、`python markdownup.py` の代わりに `markdownup` と入力できます。
 
 ## アクセス方法
 
 サーバー起動後、以下のURLでアクセスできます：
 
-- **ローカル**: http://localhost:8000
-- **ネットワーク**: http://pi.local:8000 または http://192.168.1.x:8000
+- **ローカル**: `http://localhost:<port>`
+- **ネットワーク**: `http://<host>:<port>`
+
+`<port>` は起動時の表示に従ってください（デフォルトは 8000、使用中の場合は代替ポートになることがあります）。
 
 ## キーボードショートカット
 
@@ -163,11 +163,11 @@ python markdownup.py --restart
 
 ```
 -h, --help                  ヘルプを表示
--p PORT, --port PORT        ポート番号を指定（デフォルト: 8000）
+-p PORT, --port PORT        ポート番号を指定（--start と併用。デフォルト: 8000）
 -d DIR, --directory DIR     サーバーのルートディレクトリを指定（デフォルト: カレントディレクトリ）
 --header                    画面右上にロゴ表示、印刷時にcredits.md表示
 --stop                      実行中のサービスを停止
---restart                   実行中のサービスを再起動
+--start                     バックグラウンドでサービスを起動（-d/--directory, --header を併用可）
 ```
 
 ### --header オプション
@@ -179,7 +179,7 @@ python markdownup.py --restart
 
 ```bash
 # ロゴとcreditsを有効にして起動
-markdownup --directory ./docs --header
+markdownup --start --directory ./docs --header
 ```
 
 必要なファイル：
@@ -197,14 +197,14 @@ markdownup --directory ./docs --header
 
 ### カスタムルートディレクトリ
 
-`--directory` オプションで、任意のディレクトリをサーバーのルートとして起動できます：
+`--directory` オプションで、任意のディレクトリをサーバーのルートとして起動できます（`--start` と併用）：
 
 ```bash
 # プロジェクトのドキュメントディレクトリを公開
-markdownup --directory ./docs
+markdownup --start --directory ./docs
 
 # 特定のパスを公開
-markdownup --directory /home/user/wiki
+markdownup --start --directory /home/user/wiki
 ```
 
 指定したディレクトリ配下のファイルのみがアクセス可能になります。
@@ -225,8 +225,8 @@ def hello_world():
 
 ### サービス管理機能
 
+- **起動（バックグラウンド）**: `--start` オプションでカレントディレクトリ配下を公開して起動
 - **停止**: `--stop` オプションで実行中のサービスを停止
-- **再起動**: `--restart` オプションで同じ設定で再起動
 - **Ctrl+C**: キーボードショートカットで即座に停止（確認不要）
 - PIDファイルで複数サービスの管理をサポート
 
@@ -265,13 +265,13 @@ rm ~/.markdownup/pid
 del %USERPROFILE%\.markdownup\pid
 ```
 
-### 再起動がうまくいかない場合
+### バックグラウンド起動がうまくいかない場合
 
-一度停止してから再度起動してください：
+一度停止してから、再度起動してください：
 
 ```bash
 markdownup --stop
-markdownup
+markdownup --start
 ```
 
 ### markdownパッケージがインストールされていない
