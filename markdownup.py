@@ -85,7 +85,7 @@ LATEST_PID_FILE = PID_BASE_DIR / 'latest_port'
 
 # HTML テンプレート
 HTML_TEMPLATE = """<!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" style="color-scheme: light;">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -98,6 +98,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             max-width: 980px;
             margin: 0 auto;
             padding: 45px;
+            background-color: #ffffff;
+            color: #24292f;
         }}
         @media (max-width: 767px) {{
             .markdown-body {{
@@ -106,6 +108,39 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }}
         body {{
             background-color: #ffffff;
+            color: #24292f;
+        }}
+        /* コードブロックのライトモード強制 */
+        .markdown-body pre {{
+            background-color: #f6f8fa !important;
+            color: #24292f !important;
+        }}
+        .markdown-body code {{
+            background-color: #f6f8fa !important;
+            color: #24292f !important;
+        }}
+        .markdown-body pre code {{
+            background-color: transparent !important;
+        }}
+        /* テーブルのライトモード強制 */
+        .markdown-body table {{
+            background-color: #ffffff !important;
+        }}
+        .markdown-body table tr {{
+            background-color: #ffffff !important;
+            border-top: 1px solid #d0d7de !important;
+        }}
+        .markdown-body table tr:nth-child(2n) {{
+            background-color: #f6f8fa !important;
+        }}
+        .markdown-body table th,
+        .markdown-body table td {{
+            background-color: transparent !important;
+            color: #24292f !important;
+            border: 1px solid #d0d7de !important;
+        }}
+        .markdown-body table th {{
+            background-color: #f6f8fa !important;
         }}
         .file-list {{
             max-width: 980px;
@@ -949,7 +984,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def get_html_template(self):
         """HTMLテンプレートを返す（Ctrl+P印刷対応）"""
         return '''<!DOCTYPE html>
-<html lang="ja">
+<html lang="ja" style="color-scheme: light;">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -962,6 +997,8 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             max-width: 980px;
             margin: 0 auto;
             padding: 45px;
+            background-color: #ffffff;
+            color: #24292f;
         }}
         @media (max-width: 767px) {{
             .markdown-body {{
@@ -970,6 +1007,39 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         }}
         body {{
             background-color: #ffffff;
+            color: #24292f;
+        }}
+        /* コードブロックのライトモード強制 */
+        .markdown-body pre {{
+            background-color: #f6f8fa !important;
+            color: #24292f !important;
+        }}
+        .markdown-body code {{
+            background-color: #f6f8fa !important;
+            color: #24292f !important;
+        }}
+        .markdown-body pre code {{
+            background-color: transparent !important;
+        }}
+        /* テーブルのライトモード強制 */
+        .markdown-body table {{
+            background-color: #ffffff !important;
+        }}
+        .markdown-body table tr {{
+            background-color: #ffffff !important;
+            border-top: 1px solid #d0d7de !important;
+        }}
+        .markdown-body table tr:nth-child(2n) {{
+            background-color: #f6f8fa !important;
+        }}
+        .markdown-body table th,
+        .markdown-body table td {{
+            background-color: transparent !important;
+            color: #24292f !important;
+            border: 1px solid #d0d7de !important;
+        }}
+        .markdown-body table th {{
+            background-color: #f6f8fa !important;
         }}
         .file-list {{
             max-width: 980px;
@@ -2499,10 +2569,18 @@ def start_service(args):
 
     start_time_ns = time.time_ns()
     with open(log_path, 'ab') as log_fp:
+        # Git Bash/Windows環境で stdout のデフォルトエンコーディングが cp1252 等になると、
+        # 日本語の print() で子プロセスが UnicodeEncodeError で即死する場合がある。
+        # 子プロセス側だけUTF-8を強制してログ出力が安全に行えるようにする。
+        child_env = os.environ.copy()
+        child_env['PYTHONUTF8'] = '1'
+        child_env['PYTHONIOENCODING'] = 'utf-8'
+
         popen_kwargs = {
             'stdin': subprocess.DEVNULL,
             'stdout': log_fp,
             'stderr': log_fp,
+            'env': child_env,
         }
         if sys.platform == 'win32':
             creationflags = 0
