@@ -413,7 +413,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 return;
             }}
             
-            // Ctrl+Alt+↑: 親ディレクトリへ移動
+            // Ctrl+Shift+↑: 親ディレクトリへ移動（Windowsでは Ctrl+Alt+↑ がシステムに取られるため代替）
+            if (e.ctrlKey && e.shiftKey && !e.altKey && e.key === 'ArrowUp') {{
+                e.preventDefault();
+                navigateToParent();
+                return;
+            }}
+            
+            // Ctrl+Alt+↑: 親ディレクトリへ移動（macOS向け）
             if (e.ctrlKey && e.altKey && e.key === 'ArrowUp') {{
                 e.preventDefault();
                 navigateToParent();
@@ -1345,6 +1352,15 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             margin-left: var(--mdf2h-presentation-h1h2-margin);
             margin-right: var(--mdf2h-presentation-h1h2-margin);
         }}
+        /* H1のサイズ・マージン・パディングをH2に合わせる（ページ切り替え時のXY座標を統一） */
+        /* !importantはGitHub CSSの :first-child ルールを上書きするため必要 */
+        body.mdf2h-presentation-mode .markdown-body h1 {{
+            font-size: 1.5em !important;
+            margin-top: 24px !important;
+            margin-bottom: 16px !important;
+            padding-bottom: 0.3em !important;
+            border-bottom: 1px solid var(--color-border-muted, #d0d7de) !important;
+        }}
         /* H1/H2配下のコンテンツは少し左右にマージンを追加（設定で変更可能） */
         body.mdf2h-presentation-mode .markdown-body h3,
         body.mdf2h-presentation-mode .markdown-body h4,
@@ -1477,6 +1493,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                         const now = await fetchSignature();
                         if (!now || !now.exists) return;
                         if (autoReloadSig !== null && now.sig !== autoReloadSig) {{
+                            savePresentationState();
                             location.reload();
                         }}
                     }} catch (e) {{
@@ -1496,6 +1513,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             setTimeout(scrollToHash, 500);
             setTimeout(scrollToHash, 1000);
             initAutoReload();
+            restorePresentationState();
         }});
         window.addEventListener('hashchange', scrollToHash);
         
@@ -1924,6 +1942,37 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         let presentationMode = false;
         let presentationSections = [];
         let presentationIndex = 0;
+        const PRESENTATION_STATE_KEY = 'mdf2h-presentation-state';
+
+        function savePresentationState() {{
+            if (presentationMode) {{
+                sessionStorage.setItem(PRESENTATION_STATE_KEY, JSON.stringify({{
+                    mode: true,
+                    index: presentationIndex
+                }}));
+            }} else {{
+                sessionStorage.removeItem(PRESENTATION_STATE_KEY);
+            }}
+        }}
+
+        function restorePresentationState() {{
+            const saved = sessionStorage.getItem(PRESENTATION_STATE_KEY);
+            if (saved) {{
+                try {{
+                    const state = JSON.parse(saved);
+                    if (state.mode) {{
+                        presentationMode = true;
+                        document.body.classList.add('mdf2h-presentation-mode');
+                        applyPresentationMarginSetting();
+                        presentationSections = buildPresentationSections();
+                        presentationIndex = Math.min(state.index || 0, Math.max(0, presentationSections.length - 1));
+                        applyPresentationVisibility();
+                    }}
+                }} catch (e) {{
+                    // ignore
+                }}
+            }}
+        }}
 
         function isPresentationBoundary(el) {{
             return el && (el.tagName === 'H1' || el.tagName === 'H2');
@@ -2165,6 +2214,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 e.preventDefault();
                 presentationIndex = sectionIndex;
                 applyPresentationVisibility();
+                savePresentationState();
                 // スクロールしてターゲットを表示
                 setTimeout(() => {{
                     targetEl.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
@@ -2186,6 +2236,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             }} else {{
                 clearPresentationHidden();
             }}
+            savePresentationState();
         }}
 
         function gotoPresentation(delta) {{
@@ -2194,6 +2245,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             if (nextIndex < 0 || nextIndex >= presentationSections.length) return;
             presentationIndex = nextIndex;
             applyPresentationVisibility();
+            savePresentationState();
         }}
         
         // ========== キーボードショートカット ==========
@@ -2205,7 +2257,25 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 return;
             }}
             
-            // Ctrl+Alt+矢印: ナビゲーション
+            // Ctrl+Shift+矢印: ナビゲーション（Windowsでは Ctrl+Alt+矢印 がシステムに取られるため代替）
+            if (e.ctrlKey && e.shiftKey && !e.altKey) {{
+                switch(e.key) {{
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        navigateToParent();
+                        return;
+                    case 'ArrowRight':
+                        e.preventDefault();
+                        navigateToNext();
+                        return;
+                    case 'ArrowLeft':
+                        e.preventDefault();
+                        navigateToPrev();
+                        return;
+                }}
+            }}
+            
+            // Ctrl+Alt+矢印: ナビゲーション（macOS向け、Windowsでは動作しない場合あり）
             if (e.ctrlKey && e.altKey) {{
                 switch(e.key) {{
                     case 'p':

@@ -9,7 +9,7 @@
 
 ### 1. エンコーディング自動検出機能の追加
 
-`markdownup.py` の `send_markdown_as_html()` メソッドを修正し、複数のエンコーディングを順番に試すように変更：
+`markdownup.py` の `send_markdown_as_html()` メソッドを修正し、複数のエンコーディングを順番に試すように変更:
 
 - UTF-8
 - UTF-8 with BOM
@@ -23,7 +23,7 @@
 
 ### 2. インストール方法の変更
 
-`.txt` ファイルの暗号化問題を回避するため、以下を実装：
+`.txt` ファイルの暗号化問題を回避するため、以下を実装:
 
 - `install.sh` (Linux/macOS用)
 - `install.bat` (Windows用)
@@ -34,7 +34,7 @@
 ### 3. ドキュメントの更新
 
 - `README.md`: インストール手順を更新
-- `.gitignore`: `.egg-info/*.txt` を追加（暗号化対策）
+- `.gitignore`: `.egg-info/*.txt` を追加(暗号化対策)
 
 ## 使用方法
 
@@ -50,7 +50,7 @@ bash install.sh
 install.bat
 ```
 
-または手動で：
+または手動で:
 ```bash
 python -m pip install --user markdown pygments
 ```
@@ -61,7 +61,7 @@ python -m pip install --user markdown pygments
 python markdownup.py -d ./
 ```
 
-### エイリアス作成（オプション）
+### エイリアス作成(オプション)
 
 **Linux/macOS (~/.bashrc に追加):**
 ```bash
@@ -84,7 +84,5 @@ python "C:\path\to\markdownup.py" %*
 ## 注意事項
 
 - Python 3.8以上が必要
-- `markdown` と `pygments` パッケージが必要（最適な表示のため）
+- `markdown` と `pygments` パッケージが必要(最適な表示のため)
 - `.txt` ファイルが暗号化される環境では `pip install -e .` は使用不可
-
-

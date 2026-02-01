@@ -15,13 +15,13 @@
 bash install.sh
 ```
 
-または手動で：
+または手動で:
 
 ```bash
 # 1. 依存パッケージをインストール
 python -m pip install --user markdown pygments
 
-# 2. エイリアスを設定（オプション）
+# 2. エイリアスを設定(オプション)
 echo "alias markdownup='python $(pwd)/markdownup.py'" >> ~/.bashrc
 source ~/.bashrc
 ```
@@ -32,20 +32,20 @@ source ~/.bashrc
 install.bat
 ```
 
-または手動で：
+または手動で:
 
 ```cmd
 REM 1. 依存パッケージをインストール
 python -m pip install --user markdown pygments
 
-REM 2. バッチファイルを作成（オプション）
+REM 2. バッチファイルを作成(オプション)
 echo @echo off > markdownup.bat
 echo python "%CD%\markdownup.py" %%* >> markdownup.bat
 ```
 
 ## 使用方法
 
-セットアップ後、以下のように直接実行します：
+セットアップ後、以下のように直接実行します:
 
 ```bash
 # ヘルプを表示
@@ -58,7 +58,7 @@ python markdownup.py -d ./
 python markdownup.py -d ./ --port 8080
 ```
 
-## エイリアス/ショートカットの作成（オプション）
+## エイリアス/ショートカットの作成(オプション)
 
 ### Linux/macOS
 
@@ -74,14 +74,14 @@ chmod +x ~/.local/bin/markdownup
 
 ### Windows
 
-プロジェクトディレクトリに `markdownup.bat` を作成：
+プロジェクトディレクトリに `markdownup.bat` を作成:
 
 ```batch
 @echo off
 python "C:\path\to\markdownup.py" %*
 ```
 
-このファイルをパスの通った場所（例: `C:\Windows\` や `%USERPROFILE%\bin`）にコピーすれば、
+このファイルをパスの通った場所(例: `C:\Windows\` や `%USERPROFILE%\bin`)にコピーすれば、
 どこからでも `markdownup` コマンドとして使用できます。
 
 ## トラブルシューティング
@@ -101,7 +101,7 @@ python -m pip install --user markdown pygments
 
 ### Python が見つからない場合
 
-Python 3.8以上がインストールされているか確認してください：
+Python 3.8以上がインストールされているか確認してください:
 
 ```bash
 python --version
@@ -113,10 +113,10 @@ python --version
 python3 --version
 ```
 
-## なぜ pip install -e . が使えないのか？
+## なぜ pip install -e . が使えないのか?
 
 通常の `pip install -e .` によるeditableインストールでは、setuptools が
-`markdownup.egg-info/` ディレクトリ内に複数の `.txt` ファイルを生成します：
+`markdownup.egg-info/` ディレクトリ内に複数の `.txt` ファイルを生成します:
 
 - `SOURCES.txt`
 - `dependency_links.txt`
@@ -129,5 +129,3 @@ python3 --version
 
 そのため、このプロジェクトでは依存パッケージを直接インストールし、
 `markdownup.py` を直接実行する方法を推奨しています。
-
-

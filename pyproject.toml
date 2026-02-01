@@ -24,16 +24,3 @@ markdownup = "markdownup:main"
 
 [tool.setuptools]
 py-modules = ["markdownup"]
-
-
-
-
-
-
-
-
-
-
-
-
-
