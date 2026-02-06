@@ -10,13 +10,9 @@ readme = "README.md"
 requires-python = ">=3.8"
 license = "MIT"
 authors = [{ name = "Jun_Shimoji" }]
-dependencies = []
-
-[project.optional-dependencies]
-render = [
+dependencies = [
   "markdown>=3.4",
   "pygments>=2.15",
-  "pymdown-extensions",
 ]
 
 [project.scripts]

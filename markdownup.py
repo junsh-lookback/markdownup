@@ -2496,10 +2496,12 @@ def get_pid_using_port(port):
     try:
         if sys.platform == 'win32':
             # Windows: netstat -ano
+            # Windows日本語環境ではコマンド出力がCP932のため、encoding='oem'で読む
             result = subprocess.run(
                 ['netstat', '-ano'],
                 capture_output=True,
-                text=True,
+                encoding='oem',
+                errors='replace',
                 creationflags=subprocess.CREATE_NO_WINDOW
             )
             for line in result.stdout.split('\n'):
@@ -2545,7 +2547,8 @@ def stop_service():
                         # Windows: taskkill /F /PID で強制終了（確認プロンプトなし）
                         subprocess.run(
                             ['taskkill', '/F', '/PID', str(pid)],
-                            capture_output=True,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
                             creationflags=subprocess.CREATE_NO_WINDOW
                         )
                     else:
@@ -2583,7 +2586,8 @@ def stop_service():
                     # Windows: taskkill /F /PID で強制終了
                     subprocess.run(
                         ['taskkill', '/F', '/PID', str(pid)],
-                        capture_output=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
                         creationflags=subprocess.CREATE_NO_WINDOW
                     )
                 else:

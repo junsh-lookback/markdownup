@@ -41,28 +41,13 @@ git clone https://github.com/yourusername/markdownup.git
 cd markdownup
 ```
 
-2. 依存パッケージをインストール:
+2. パッケージをインストール:
 
-**Linux/macOS:**
 ```bash
-bash install.sh
+pip install -e .
 ```
 
-**Windows:**
-```cmd
-install.bat
-```
-
-または手動でインストール:
-```bash
-python -m pip install --user markdown pygments
-```
-
-> **注意**: 
-> - `markdown`: MarkdownをHTMLに変換(テーブル、目次、アンカーリンクなど)
-> - `pygments`: コードのシンタックスハイライト
-> 
-> これらのパッケージがないと、簡易的な変換機能のみとなり、多くの機能が制限されます。
+依存パッケージ（`markdown`, `pygments`）も自動的にインストールされます。
 
 > **重要**: `.txt` ファイルの利用が不完全な環境では、`pip install -e .` は使用できません。
 > 詳細は [INSTALL.md](INSTALL.md) を参照してください。
@@ -276,12 +261,7 @@ markdownup --start
 
 ### markdownパッケージがインストールされていない
 
-以下を実行してください:
-```bash
-pip install markdown pygments
-```
-
-マークダウンパッケージがない場合は、簡易的なHTML変換が行われます。
+`pip install -e .` を再実行してください。依存パッケージが自動的にインストールされます。
 
 ### 文字化けが発生する場合
 
@@ -298,19 +278,6 @@ Error: 'utf-8' codec can't decode byte 0xd0 in position 0: invalid continuation 
 このエラーは `markdownup.py` 自体の問題ではなく、Python環境の問題です。markdownupでは、markdown拡張機能をインスタンスとして直接渡すことで `entry_points.txt` の検索を回避しています。
 
 通常の環境では特別な対応は不要です。
-
-## 必須パッケージ
-
-- **markdown**: MarkdownをHTMLに変換
-- **pygments**: コード構文ハイライト
-
-```bash
-pip install markdown pygments
-```
-
-## オプションパッケージ
-
-これらのパッケージがインストールされていなくても基本的な機能は動作します。
 
 ## ライセンス
 
