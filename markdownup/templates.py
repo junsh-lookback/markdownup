@@ -79,12 +79,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             text-decoration: none;
             color: #0969da;
             font-size: 14px;
-            transition: all 0.2s;
-        }}
-        .file-item:hover {{
-            background-color: #e6f2ff;
-            border-color: #0969da;
-            transform: translateX(4px);
         }}
         .dir-section {{
             margin: 24px 0;
@@ -557,12 +551,6 @@ def get_print_html_template():
             text-decoration: none;
             color: #0969da;
             font-size: 14px;
-            transition: all 0.2s;
-        }}
-        .file-item:hover {{
-            background-color: #e6f2ff;
-            border-color: #0969da;
-            transform: translateX(4px);
         }}
         .dir-section {{
             margin: 24px 0;
@@ -574,6 +562,14 @@ def get_print_html_template():
         .dir-link {{
             background-color: #eaf3ff;
             border-color: #8ea1df;
+        }}
+        
+        /* Mermaid図表: preのデフォルトスタイルをリセットしてSVG表示を正常化 */
+        .markdown-body pre.mermaid {{
+            background-color: transparent !important;
+            border: none !important;
+            padding: 0 !important;
+            overflow: visible !important;
         }}
         
         /* 見出しホバー効果（折りたたみ可能な位置を示す） */
@@ -900,6 +896,15 @@ def get_print_html_template():
             margin-left: 0;
             margin-right: 0;
         }}
+        /* テーブルラッパーにマージン適用（リサイズボタンも追従） */
+        body.mdf2h-presentation-mode .markdown-body .mdf2h-tablewrap {{
+            margin-left: var(--mdf2h-presentation-margin);
+            margin-right: var(--mdf2h-presentation-margin);
+        }}
+        body.mdf2h-presentation-mode .markdown-body .mdf2h-tablewrap table {{
+            margin-left: 0;
+            margin-right: 0;
+        }}
         
         /* ========== インラインTOC（H1の下に表示） ========== */
         .mdf2h-inline-toc {{
@@ -961,7 +966,88 @@ def get_print_html_template():
                 width: auto;
             }}
         }}
+        
+        /* ========== テーブルサイズ切替（ボタン対応） ========== */
+        .mdf2h-tablewrap {{
+            position: relative;
+        }}
+        .mdf2h-table-resize-btn {{
+            position: absolute;
+            top: 0px;
+            right: 0px;
+            padding: 4px;
+            width: 24px;
+            height: 24px;
+            background: rgba(255, 255, 255, 0.8);
+            border: 1px solid #d0d7de;
+            border-radius: 4px;
+            color: #57606a;
+            cursor: pointer;
+            z-index: 5;
+            transition: all 0.15s;
+        }}
+        .mdf2h-table-resize-btn:hover {{
+            background: rgba(255, 255, 255, 1);
+            color: #24292f;
+        }}
+        .mdf2h-table-resize-btn svg {{
+            width: 14px;
+            height: 14px;
+        }}
+        .mdf2h-tablewrap.mdf2h-table-medium table {{
+            font-size: 0.85em;
+        }}
+        .mdf2h-tablewrap.mdf2h-table-small table {{
+            font-size: 0.7em;
+        }}
+        @media print {{
+            .mdf2h-table-resize-btn {{
+                display: none !important;
+            }}
+            .mdf2h-tablewrap.mdf2h-table-medium table,
+            .mdf2h-tablewrap.mdf2h-table-small table {{
+                font-size: inherit;
+            }}
+        }}
+        
+        /* ========== インライン編集機能 ========== */
+        .mdf2h-edit-mode .markdown-body > * {{
+            outline: 1px dashed transparent;
+            transition: outline 0.2s;
+        }}
+        .mdf2h-edit-mode .markdown-body > *:hover {{
+            outline: 1px dashed #0969da;
+            position: relative;
+        }}
+        .mdf2h-edit-mode .markdown-body [contenteditable="true"] {{
+            outline: 2px solid #0969da;
+            background-color: #f6f8fa;
+            padding: 4px;
+            border-radius: 3px;
+        }}
+        /* 編集モード中のステータス表示（左下） */
+        .mdf2h-edit-mode::after {{
+            content: '編集中 (Ctrl+Alt+E で保存)';
+            position: fixed;
+            bottom: 16px;
+            left: 16px;
+            padding: 6px 12px;
+            font-size: 12px;
+            background-color: #0969da;
+            color: white;
+            border-radius: 4px;
+            z-index: 1000;
+            pointer-events: none;
+        }}
+        @media print {{
+            .mdf2h-edit-mode::after {{
+                display: none !important;
+            }}
+        }}
     </style>
+    <!-- Turndown.js: HTML→Markdown変換ライブラリ（インライン編集用） -->
+    <script src="https://cdn.jsdelivr.net/npm/turndown@7.1.2/dist/turndown.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/turndown-plugin-gfm@1.0.2/dist/turndown-plugin-gfm.min.js"></script>
     <script type="module">
         import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
         mermaid.initialize({{ startOnLoad: true }});
@@ -1178,6 +1264,327 @@ def get_print_html_template():
                     }}
                 }});
             }});
+        }}
+        
+        // ========== テーブルクリックで3段階サイズ切替 ==========
+        function initTableSizeToggle() {{
+            const article = document.querySelector('.markdown-body');
+            if (!article) return;
+
+            const tables = Array.from(article.querySelectorAll('table'));
+            tables.forEach((table) => {{
+                // 印刷用要素内は除外
+                if (table.closest('.mdf2h-print-toc') || table.closest('.mdf2h-print-credits')) return;
+                // 既にラップ済みならスキップ
+                if (table.closest('.mdf2h-tablewrap')) return;
+
+                const wrapper = document.createElement('div');
+                wrapper.className = 'mdf2h-tablewrap';
+
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'mdf2h-table-resize-btn';
+                btn.title = 'テーブルサイズ切替';
+                // リサイズアイコン (双方向矢印)
+                const resizeIcon = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M1.75 10a.75.75 0 0 0-.75.75v3.5c0 .414.336.75.75.75h3.5a.75.75 0 0 0 0-1.5H3.56l2.72-2.72a.75.75 0 1 0-1.06-1.06L2.5 12.44V10.75a.75.75 0 0 0-.75-.75Zm12.5-4a.75.75 0 0 0 .75-.75V1.75a.75.75 0 0 0-.75-.75h-3.5a.75.75 0 0 0 0 1.5h1.69l-2.72 2.72a.75.75 0 1 0 1.06 1.06l2.72-2.72v1.69a.75.75 0 0 0 .75.75Z"></path></svg>';
+                btn.innerHTML = resizeIcon;
+
+                btn.addEventListener('click', (ev) => {{
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    if (wrapper.classList.contains('mdf2h-table-small')) {{
+                        // 小 → デフォルト
+                        wrapper.classList.remove('mdf2h-table-small');
+                    }} else if (wrapper.classList.contains('mdf2h-table-medium')) {{
+                        // 中 → 小
+                        wrapper.classList.remove('mdf2h-table-medium');
+                        wrapper.classList.add('mdf2h-table-small');
+                    }} else {{
+                        // デフォルト → 中
+                        wrapper.classList.add('mdf2h-table-medium');
+                    }}
+                }});
+
+                // DOM差し替え: table を wrapper に移動してボタンを重ねる
+                table.parentNode.insertBefore(wrapper, table);
+                wrapper.appendChild(btn);
+                wrapper.appendChild(table);
+            }});
+        }}
+        
+        // ========== インライン編集機能 ==========
+        let editMode = false;
+        let turndownService = null;
+        let initTurndownRetries = 0;
+        
+        
+        function initTurndown() {{
+            // モジュールスコープからはwindow経由でグローバル変数にアクセス
+            if (typeof window.TurndownService === 'undefined') {{
+                initTurndownRetries++;
+                if (initTurndownRetries < 50) {{
+                    setTimeout(initTurndown, 200);
+                }} else {{
+                    console.error('[markdownup] TurndownService が読み込めませんでした');
+                }}
+                return;
+            }}
+            try {{
+                turndownService = new window.TurndownService({{
+                    headingStyle: 'atx',
+                    codeBlockStyle: 'fenced'
+                }});
+                
+                // GitHub Flavored Markdown対応
+                if (typeof window.turndownPluginGfm !== 'undefined' && window.turndownPluginGfm.gfm) {{
+                    turndownService.use(window.turndownPluginGfm.gfm);
+                }}
+                
+                // Mermaid用カスタムルール: <pre class="mermaid"> を ```mermaid ブロックに変換
+                // Mermaidブロックは編集不可のため、元テキストをそのまま保持する
+                turndownService.addRule('mermaid', {{
+                    filter: function(node) {{
+                        return node.nodeName === 'PRE' && node.classList.contains('mermaid');
+                    }},
+                    replacement: function(content, node) {{
+                        const text = node.textContent || '';
+                        return '\\n```mermaid\\n' + text.trim() + '\\n```\\n';
+                    }}
+                }});
+                
+                console.log('[markdownup] Turndown initialized');
+            }} catch (e) {{
+                console.error('[markdownup] Turndown init error:', e);
+            }}
+        }}
+        
+        function toggleEditMode() {{
+            editMode = !editMode;
+            const body = document.body;
+            
+            if (editMode) {{
+                body.classList.add('mdf2h-edit-mode');
+                showToast('編集モード ON（Ctrl+Alt+E で保存 / Esc で破棄）', true);
+                // 編集中は自動リロードを停止
+                if (autoReloadTimer) {{
+                    clearInterval(autoReloadTimer);
+                    autoReloadTimer = null;
+                }}
+                enableEditing();
+            }} else {{
+                body.classList.remove('mdf2h-edit-mode');
+                disableEditing();
+                // 自動リロードを再開
+                initAutoReload();
+            }}
+        }}
+        
+        function cancelEditMode() {{
+            if (!editMode) return;
+            editMode = false;
+            document.body.classList.remove('mdf2h-edit-mode');
+            disableEditing();
+            showToast('編集を破棄しました', true);
+            // 自動リロードを再開
+            initAutoReload();
+            // ページをリロードして元の状態に戻す
+            location.reload();
+        }}
+        
+        function enableEditing() {{
+            const article = document.querySelector('.markdown-body');
+            if (!article) return;
+            
+            // 直接の子要素にクリックイベントを追加
+            const children = Array.from(article.children);
+            children.forEach(el => {{
+                // 印刷用要素とインラインTOCは除外
+                if (el.classList.contains('mdf2h-print-toc') || 
+                    el.classList.contains('mdf2h-print-credits') ||
+                    el.classList.contains('mdf2h-inline-toc')) {{
+                    return;
+                }}
+                // Mermaidブロックは編集不可（SVG表示が崩れるため）
+                if (el.classList.contains('mermaid') || (el.tagName === 'PRE' && el.classList.contains('mermaid'))) {{
+                    return;
+                }}
+                
+                el.addEventListener('click', makeElementEditable);
+            }});
+        }}
+        
+        function disableEditing() {{
+            const article = document.querySelector('.markdown-body');
+            if (!article) return;
+            
+            const editables = article.querySelectorAll('[contenteditable="true"]');
+            editables.forEach(el => {{
+                el.contentEditable = 'false';
+                el.removeEventListener('blur', handleElementBlur);
+            }});
+            
+            // クリックイベントも除去
+            const children = Array.from(article.children);
+            children.forEach(el => {{
+                el.removeEventListener('click', makeElementEditable);
+            }});
+        }}
+        
+        
+        function makeElementEditable(e) {{
+            if (!editMode) return;
+            
+            const target = e.currentTarget;
+            if (target.contentEditable === 'true') return;
+            
+            e.stopPropagation();
+            
+            target.contentEditable = 'true';
+            target.focus();
+            
+            // 編集終了時のハンドラ
+            target.addEventListener('blur', handleElementBlur);
+            
+            // Escapeキーで編集解除
+            target.addEventListener('keydown', handleEditKeydown);
+        }}
+        
+        function handleEditKeydown(ke) {{
+            if (ke.key === 'Escape') {{
+                ke.preventDefault();
+                ke.target.blur();
+            }}
+        }}
+        
+        function handleElementBlur(e) {{
+            const target = e.target;
+            target.contentEditable = 'false';
+            target.removeEventListener('blur', handleElementBlur);
+            target.removeEventListener('keydown', handleEditKeydown);
+        }}
+        
+        async function saveChanges() {{
+            const article = document.querySelector('.markdown-body');
+            if (!article) {{
+                showToast('保存対象が見つかりません', false);
+                return;
+            }}
+            if (!turndownService) {{
+                console.error('[markdownup] turndownService is null');
+                showToast('変換ライブラリが読み込まれていません（ブラウザコンソールを確認）', false);
+                return;
+            }}
+            
+            try {{
+                // HTMLをコピーして変換前処理
+                const clone = article.cloneNode(true);
+                
+                // 印刷用要素、インラインTOC、Copyボタン、テーブルリサイズボタンを削除
+                clone.querySelectorAll('.mdf2h-print-toc, .mdf2h-print-credits, .mdf2h-inline-toc, .mdf2h-copy-btn, .mdf2h-table-resize-btn').forEach(el => el.remove());
+                
+                // Mermaid: SVGを削除してTurndownの変換対象から除外（元テキストはtextContentから復元）
+                clone.querySelectorAll('pre.mermaid').forEach(pre => {{
+                    pre.querySelectorAll('svg').forEach(svg => svg.remove());
+                    pre.removeAttribute('id');
+                }});
+                
+                // codewrap のラッパーを解除（pre を直接の子に戻す）
+                clone.querySelectorAll('.mdf2h-codewrap').forEach(wrap => {{
+                    const pre = wrap.querySelector('pre');
+                    if (pre) {{
+                        wrap.parentNode.insertBefore(pre, wrap);
+                    }}
+                    wrap.remove();
+                }});
+                
+                // CodeHilite が挿入する空の <span> を削除
+                // (<pre><span></span><code>...</code></pre> の空span)
+                // Turndown は pre.firstChild === CODE でコードブロックを認識するため必須
+                clone.querySelectorAll('pre').forEach(pre => {{
+                    const fc = pre.firstChild;
+                    if (fc && fc.nodeName === 'SPAN' && fc.textContent === '') {{
+                        fc.remove();
+                    }}
+                }});
+                
+                // tablewrap のラッパーを解除（table を直接の子に戻す）
+                clone.querySelectorAll('.mdf2h-tablewrap').forEach(wrap => {{
+                    const table = wrap.querySelector('table');
+                    if (table) {{
+                        wrap.parentNode.insertBefore(table, wrap);
+                    }}
+                    wrap.remove();
+                }});
+                
+                // contenteditable属性を除去
+                clone.querySelectorAll('[contenteditable]').forEach(el => {{
+                    el.removeAttribute('contenteditable');
+                }});
+                
+                // tabindex属性を除去
+                clone.querySelectorAll('[tabindex]').forEach(el => {{
+                    el.removeAttribute('tabindex');
+                }});
+                
+                // mdf2h-img-clickable等の動的クラスを除去
+                clone.querySelectorAll('.mdf2h-img-clickable').forEach(el => {{
+                    el.classList.remove('mdf2h-img-clickable');
+                }});
+                clone.querySelectorAll('.mdf2h-img-item').forEach(el => {{
+                    el.classList.remove('mdf2h-img-item');
+                }});
+                
+                // pre/code 内の <br> を改行文字に復元
+                // contentEditable でブラウザが改行を <br> に置換するため、
+                // Turndown の textContent 取得時に改行が消失する問題の対策
+                clone.querySelectorAll('pre').forEach(pre => {{
+                    pre.querySelectorAll('br').forEach(br => {{
+                        br.replaceWith('\\n');
+                    }});
+                    // ブラウザが contentEditable で挿入する <div> ラッパーを解除
+                    pre.querySelectorAll('div').forEach(div => {{
+                        const text = div.textContent || '';
+                        const newline = document.createTextNode('\\n' + text);
+                        div.replaceWith(newline);
+                    }});
+                }});
+                
+                // HTML→Markdown変換
+                const md = turndownService.turndown(clone.innerHTML);
+                console.log('[markdownup] Converted markdown length:', md.length);
+                
+                // サーバーに保存
+                const currentPath = window.location.pathname;
+                console.log('[markdownup] Saving to:', currentPath);
+                const response = await fetch('/__save__', {{
+                    method: 'POST',
+                    headers: {{
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify({{
+                        path: currentPath,
+                        content: md
+                    }})
+                }});
+                
+                const responseText = await response.text();
+                console.log('[markdownup] Save response:', response.status, responseText);
+                
+                if (response.ok) {{
+                    showToast('保存しました', true);
+                    // 編集モードを解除
+                    editMode = false;
+                    document.body.classList.remove('mdf2h-edit-mode');
+                    disableEditing();
+                    // 自動リロードを再開（ファイル変更を検知して更新される）
+                    initAutoReload();
+                }} else {{
+                    showToast('保存に失敗しました: ' + response.status + ' ' + responseText, false);
+                }}
+            }} catch (e) {{
+                console.error('[markdownup] Save error:', e);
+                showToast('保存エラー: ' + e.message, false);
+            }}
         }}
         
         // ========== コードブロックCopy機能 ==========
@@ -1852,6 +2259,19 @@ def get_print_html_template():
         
         // ========== キーボードショートカット ==========
         document.addEventListener('keydown', (e) => {{
+            // Escape: 編集モード中で要素にフォーカスがなければ編集モードを保存せず終了
+            if (e.key === 'Escape' && editMode) {{
+                // contenteditable中の要素にフォーカスがある場合は
+                // そのフォーカス解除のみ（handleEditKeydown で処理済み）
+                const active = document.activeElement;
+                const isEditingElement = active && active.contentEditable === 'true';
+                if (!isEditingElement) {{
+                    e.preventDefault();
+                    cancelEditMode();
+                    return;
+                }}
+            }}
+            
             // Ctrl+Alt+A: ルートへ移動
             if (e.ctrlKey && e.altKey && !e.shiftKey && (e.key === 'a' || e.key === 'A')) {{
                 e.preventDefault();
@@ -1880,8 +2300,20 @@ def get_print_html_template():
             // Ctrl+Alt+矢印: ナビゲーション（macOS向け、Windowsでは動作しない場合あり）
             if (e.ctrlKey && e.altKey) {{
                 switch(e.key) {{
+                    case 'e':
+                    case 'E':
+                        e.preventDefault();
+                        // 編集モード中に再度押すと保存
+                        if (editMode) {{
+                            saveChanges();
+                        }} else {{
+                            toggleEditMode();
+                        }}
+                        return;
                     case 'p':
                     case 'P':
+                        // 編集モード中はプレゼンモード切替を無効化
+                        if (editMode) return;
                         e.preventDefault();
                         togglePresentationMode();
                         return;
@@ -1890,10 +2322,14 @@ def get_print_html_template():
                         navigateToParent();
                         return;
                     case 'ArrowRight':
+                        // 編集モード中はナビゲーション無効化
+                        if (editMode) return;
                         e.preventDefault();
                         navigateToNext();
                         return;
                     case 'ArrowLeft':
+                        // 編集モード中はナビゲーション無効化
+                        if (editMode) return;
                         e.preventDefault();
                         navigateToPrev();
                         return;
@@ -1905,16 +2341,16 @@ def get_print_html_template():
                 }}
             }}
             
-            // Enter: フォーカス/ホバー中の見出しを折りたたみ
-            if (!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && e.key === 'Enter') {{
+            // Enter: フォーカス/ホバー中の見出しを折りたたみ（編集モード中は無効）
+            if (!editMode && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey && e.key === 'Enter') {{
                 if (toggleHoverHeading()) {{
                     e.preventDefault();
                     return;
                 }}
             }}
             
-            // Ctrl+Enter: フォーカス/ホバー中の見出しを折りたたみ
-            if (e.ctrlKey && e.key === 'Enter') {{
+            // Ctrl+Enter: フォーカス/ホバー中の見出しを折りたたみ（編集モード中は無効）
+            if (!editMode && e.ctrlKey && e.key === 'Enter') {{
                 if (toggleHoverHeading()) {{
                     e.preventDefault();
                     return;
@@ -1922,8 +2358,12 @@ def get_print_html_template():
             }}
             
             // ↑↓キー（修飾キーなし）: プレゼンモードではスクロール、通常モードではフォーカス移動
+            // 編集モード中はブラウザのデフォルト動作に任せる（テキスト編集用カーソル移動）
             if (!e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {{
-                if (presentationMode) {{
+                if (editMode) {{
+                    // 編集モード中: ブラウザデフォルト動作（矢印キーでカーソル移動）
+                    return;
+                }} else if (presentationMode) {{
                     // プレゼンモード: ↑↓でスクロール、←→でページ移動
                     if (e.key === 'ArrowDown') {{
                         e.preventDefault();
@@ -1970,6 +2410,8 @@ def get_print_html_template():
             insertTocUnderH1();
             initImageListItems();
             initImageSizeToggle();
+            initTableSizeToggle();
+            initTurndown();
             // DOM変更がすべて完了した後にプレゼン状態を復元
             restorePresentationState();
         }});

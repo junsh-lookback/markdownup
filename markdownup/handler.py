@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """HTTPリクエストハンドラー"""
 
+import html
 import http.server
+import json
 import re
 import urllib.parse
 from pathlib import Path
@@ -75,6 +77,60 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         
         # 3. その他（画像など）は標準の処理に任せる
         super().do_GET()
+    
+    def do_POST(self):
+        """POSTリクエスト処理（編集内容の保存）"""
+        parsed = urllib.parse.urlparse(self.path)
+        path_str = urllib.parse.unquote(parsed.path).strip('/')
+        
+        # __save__ エンドポイント
+        if path_str == '__save__':
+            self.handle_save_request()
+            return
+        
+        self.send_error(404, 'Not found')
+    
+    def handle_save_request(self):
+        """編集内容をファイルに保存"""
+        try:
+            # Content-Lengthヘッダーからデータサイズを取得
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length == 0:
+                self.send_error(400, 'No content')
+                return
+            
+            # JSONデータを読み取り
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data.decode('utf-8'))
+            
+            # パスとコンテンツを取得（URLエンコードされた日本語パスをデコード）
+            file_path = urllib.parse.unquote(data.get('path', ''))
+            content = data.get('content', '')
+            
+            if not file_path or not file_path.endswith('.md'):
+                self.send_error(400, 'Invalid path')
+                return
+            
+            # セキュリティチェック: パストラバーサル防止
+            local_path = Path('.') / file_path.strip('/')
+            try:
+                local_path.resolve().relative_to(Path('.').resolve())
+            except ValueError:
+                self.send_error(403, 'Access denied')
+                return
+            
+            # ファイルに書き込み
+            local_path.write_text(content, encoding='utf-8')
+            
+            # 成功レスポンス
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            response = json.dumps({'success': True})
+            self.wfile.write(response.encode('utf-8'))
+            
+        except Exception as e:
+            self.send_error(500, f'Save error: {e}')
     
     def send_credits_md(self):
         """スクリプトディレクトリの credits.md をMarkdownとして返す"""
@@ -319,7 +375,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         is_root = str(rel_path) == '.'
         settings_section = SETTINGS_SECTION_HTML if is_root else ''
         
-        html = HTML_TEMPLATE.format(
+        html_output = HTML_TEMPLATE.format(
             title=f'Index of {display_path}',
             content=content,
             settings_section=settings_section
@@ -329,7 +385,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.send_no_cache_headers()
         self.end_headers()
-        self.wfile.write(html.encode('utf-8'))
+        self.wfile.write(html_output.encode('utf-8'))
     
     def send_markdown_as_html(self, file_path):
         """MarkdownファイルをHTMLに変換して送信"""
@@ -411,10 +467,12 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 html_content = self.simple_markdown_to_html(md_content)
             
             # Mermaidブロックを復元（<pre class="mermaid">形式で）
+            # HTMLエスケープにより <br/> 等のHTMLタグがブラウザに解釈されるのを防ぐ
+            # mermaid.jsはtextContentで読み取るため、エスケープされた文字は自動的に復元される
             for i, block in enumerate(mermaid_blocks):
                 html_content = html_content.replace(
                     f'<!--MERMAID_PLACEHOLDER_{i}-->',
-                    f'<pre class="mermaid">{block}</pre>'
+                    f'<pre class="mermaid">{html.escape(block)}</pre>'
                 )
             
             # 強制改ページマーカーを復元
@@ -430,7 +488,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             
             # 見出しIDは markdown.extensions.toc が付与する（extension_configsでslugifyを調整）
             
-            html = self.get_html_template().format(
+            html_output = self.get_html_template().format(
                 title=file_path.name,
                 content=html_content,
                 header_mode='true' if self.header_mode else 'false'
@@ -440,7 +498,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_header('Content-Type', 'text/html; charset=utf-8')
             self.send_no_cache_headers()
             self.end_headers()
-            self.wfile.write(html.encode('utf-8'))
+            self.wfile.write(html_output.encode('utf-8'))
             
         except Exception as e:
             self.send_error(500, f'Error: {str(e)}')
