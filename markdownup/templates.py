@@ -1,89 +1,7 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Markdownビューワーサーバー
-UTF-8エンコーディングでMarkdownファイルを配信します
+"""HTMLテンプレート定義"""
 
-使用例:
-    # サーバーを起動（HTMLに変換）
-    python markdownup.py
-    
-    # 特定のディレクトリをルートとして起動
-    python markdownup.py --directory /path/to/docs
-    python markdownup.py --header
-    
-    # サービス停止
-    python markdownup.py --stop
-
-    # サービス起動（バックグラウンド）
-    python markdownup.py --start
-    python markdownup.py --start --port 8080
-    python markdownup.py --start -d ~/Documents/notes -p 8080 --header
-    
-    # 最適な表示を得るには
-    pip install markdown pygments
-"""
-
-import http.server
-import socketserver
-import socket
-from pathlib import Path
-import urllib.parse
-import argparse
-import sys
-import os
-import signal
-import re
-import importlib.util
-
-def githubish_slugify(value: str, separator: str = "-") -> str:
-    """
-    見出し文字列から安全なアンカーIDを生成する。
-    - ASCII文字（a-z, 0-9）とハイフンのみを保持
-    - 日本語や記号は除去または置換
-    - 例: "5.5 ES10a Functions（IPA ⇔ eUICC の ISD-R）" -> "5-5-es10a-functions-ipa-euicc-isd-r"
-    """
-    import unicodedata
-    # 小文字化して前後の空白を削除
-    v = (value or "").strip().lower()
-    # 日本語などのUnicodeを正規化してASCIIに近い形にする（可能な場合）
-    # ただし、今回は「文字化けしない文字」を目指すため、非ASCIIは基本的に除去
-    
-    # 記号をスペースに置換
-    v = re.sub(r"[()（）【】\[\]<>:;,/\\\\.．・⇔<=>+]", " ", v)
-    
-    # 非ASCII文字（日本語など）を除去
-    v = "".join(c for c in v if ord(c) < 128)
-    
-    # 英数字以外をセパレータに置換
-    v = re.sub(r"[^a-z0-9]+", separator, v)
-    
-    # 連続するセパレータを1つにまとめ、前後のセパレータを削除
-    v = re.sub(re.escape(separator) + r"{2,}", separator, v).strip(separator)
-    
-    return v
-
-try:
-    import markdown
-    from markdown.extensions.fenced_code import FencedCodeExtension
-    from markdown.extensions.tables import TableExtension
-    from markdown.extensions.toc import TocExtension
-    from markdown.extensions.codehilite import CodeHiliteExtension
-    from markdown.extensions.nl2br import Nl2BrExtension
-    from markdown.extensions.sane_lists import SaneListExtension
-    from markdown.extensions.attr_list import AttrListExtension
-    MARKDOWN_AVAILABLE = True
-except ImportError:
-    MARKDOWN_AVAILABLE = False
-
-# デフォルト設定
-DEFAULT_PORT = 8000
-FALLBACK_PORTS = [8001, 8080, 8888, 9000, 3000]
-PID_BASE_DIR = Path.home() / '.markdownup'
-PID_INSTANCES_DIR = PID_BASE_DIR / 'instances'
-LATEST_PID_FILE = PID_BASE_DIR / 'latest_port'
-
-# HTML テンプレート
+# HTML テンプレート（ディレクトリ一覧表示用）
 HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="ja" style="color-scheme: light;">
 <head>
@@ -560,437 +478,9 @@ SETTINGS_SECTION_HTML = """<button class="mdf2h-settings-btn" onclick="openSetti
     </div>"""
 
 
-class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
-    """MarkdownをHTMLに変換して表示するハンドラー"""
-    
-    # クラス変数: --header オプションが有効かどうか
-    header_mode = False
-    # スクリプトのディレクトリパス（credits.md の読み込みに使用）
-    script_dir = Path(__file__).parent
-    # 起動時に指定されたベースディレクトリ名
-    base_dir_name = ''
-    
-    def do_GET(self):
-        """GETリクエスト処理"""
-        # パスをデコードして正規化
-        parsed = urllib.parse.urlparse(self.path)
-        path_str = urllib.parse.unquote(parsed.path).strip('/')
-        query_params = urllib.parse.parse_qs(parsed.query)
-        local_path = Path('.') / path_str
-        
-        # 0. __credits__ エンドポイント（スクリプトディレクトリの credits.md を返す）
-        if path_str == '__credits__' and self.header_mode:
-            self.send_credits_md()
-            return
-        
-        # 0.1. __logo__ エンドポイント（スクリプトディレクトリの images/logo.png を返す）
-        if path_str == '__logo__' and self.header_mode:
-            self.send_logo_image()
-            return
-        
-        # 0.5. __nav__ エンドポイント（ナビゲーション情報を返す）
-        if path_str == '__nav__':
-            nav_path = query_params.get('path', [''])[0]
-            self.send_nav_info(nav_path)
-            return
-
-        # 0.6. __sig__ エンドポイント（更新検知用シグネチャを返す）
-        if path_str == '__sig__':
-            sig_path = query_params.get('path', [''])[0]
-            self.send_sig_info(sig_path)
-            return
-        
-        # 1. ディレクトリの場合
-        if local_path.is_dir():
-            self.send_directory_listing(local_path)
-            return
-        
-        # 2. Markdownファイルの場合
-        if path_str.endswith('.md') and local_path.exists():
-            self.send_markdown_as_html(local_path)
-            return
-        
-        # 3. その他（画像など）は標準の処理に任せる
-        super().do_GET()
-    
-    def send_credits_md(self):
-        """スクリプトディレクトリの credits.md をMarkdownとして返す"""
-        credits_path = self.script_dir / 'credits.md'
-        if credits_path.exists():
-            try:
-                with open(credits_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                self.send_response(200)
-                self.send_header('Content-Type', 'text/plain; charset=utf-8')
-                self.send_no_cache_headers()
-                self.end_headers()
-                self.wfile.write(content.encode('utf-8'))
-            except Exception as e:
-                self.send_error(500, f'Error reading credits.md: {e}')
-        else:
-            self.send_error(404, 'credits.md not found')
-    
-    def send_logo_image(self):
-        """スクリプトディレクトリの images/logo.png を返す"""
-        logo_path = self.script_dir / 'images' / 'logo.png'
-        if logo_path.exists():
-            try:
-                with open(logo_path, 'rb') as f:
-                    content = f.read()
-                self.send_response(200)
-                self.send_header('Content-Type', 'image/png')
-                self.send_no_cache_headers()
-                self.end_headers()
-                self.wfile.write(content)
-            except Exception as e:
-                self.send_error(500, f'Error reading logo.png: {e}')
-        else:
-            self.send_error(404, 'images/logo.png not found')
-    
-    def send_nav_info(self, current_path):
-        """ナビゲーション情報をJSONで返す（前後ページ、親ディレクトリ）"""
-        import json
-        
-        result = {
-            'parent': None,
-            'prevPage': None,
-            'nextPage': None
-        }
-        
-        try:
-            # パスを正規化（末尾の/を除去）
-            current_path = current_path.strip('/')
-            if not current_path:
-                # ルートの場合
-                self._send_json(result)
-                return
-            
-            current_item = Path('.') / current_path
-            
-            # ディレクトリの場合
-            if current_item.is_dir():
-                # 親ディレクトリ
-                if current_item != Path('.'):
-                    parent = current_item.parent
-                    if parent == Path('.'):
-                        result['parent'] = '/'
-                    else:
-                        result['parent'] = '/' + str(parent).replace('\\', '/') + '/'
-                self._send_json(result)
-                return
-            
-            # ファイルの場合
-            # 親ディレクトリ
-            if current_item.parent != Path('.'):
-                result['parent'] = '/' + str(current_item.parent).replace('\\', '/') + '/'
-            else:
-                result['parent'] = '/'
-            
-            # 同ディレクトリ内のMarkdownファイルをファイル名順で取得
-            if current_item.suffix.lower() == '.md':
-                parent_dir = current_item.parent
-                md_files = sorted([
-                    f for f in parent_dir.iterdir()
-                    if f.is_file() and f.suffix.lower() == '.md' and not f.name.startswith('.')
-                ], key=lambda f: f.name.lower())
-                
-                # 現在のファイルのインデックスを探す
-                try:
-                    current_index = next(
-                        i for i, f in enumerate(md_files)
-                        if f.name == current_item.name
-                    )
-                    
-                    # 前のページ
-                    if current_index > 0:
-                        prev_file = md_files[current_index - 1]
-                        result['prevPage'] = '/' + str(prev_file).replace('\\', '/')
-                    
-                    # 次のページ
-                    if current_index < len(md_files) - 1:
-                        next_file = md_files[current_index + 1]
-                        result['nextPage'] = '/' + str(next_file).replace('\\', '/')
-                except StopIteration:
-                    pass
-            
-            self._send_json(result)
-            
-        except Exception as e:
-            self._send_json({'error': str(e)})
-
-    def send_sig_info(self, requested_path):
-        """更新検知用のシグネチャをJSONで返す（ファイル/ディレクトリ）"""
-        import hashlib
-
-        try:
-            # ブラウザの pathname（例: "/foo/bar.md" や "/foo/"）を想定
-            p = (requested_path or '').split('?', 1)[0]
-            p = urllib.parse.unquote(p)
-            p = p.lstrip('/')
-
-            base_dir = Path('.').resolve()
-            target = (Path('.') / p) if p else Path('.')
-
-            # パストラバーサルを拒否（base_dir配下のみ許可）
-            try:
-                target_resolved = target.resolve()
-                target_resolved.relative_to(base_dir)
-            except Exception:
-                self._send_json({'exists': False})
-                return
-
-            if target_resolved.is_dir():
-                # ディレクトリ一覧に影響するもの（直下の非隠しディレクトリ + .md ファイル）でシグネチャ生成
-                items = list(target_resolved.iterdir())
-                dirs = [d for d in items if d.is_dir() and not d.name.startswith('.')]
-                files = [f for f in items if f.is_file() and f.suffix.lower() == '.md']
-
-                entries = []
-                for d in dirs:
-                    try:
-                        entries.append(('d', d.name, d.stat().st_mtime_ns))
-                    except Exception:
-                        entries.append(('d', d.name, 0))
-                for f in files:
-                    try:
-                        entries.append(('f', f.name, f.stat().st_mtime_ns))
-                    except Exception:
-                        entries.append(('f', f.name, 0))
-
-                entries.sort(key=lambda x: x[1].lower())
-                h = hashlib.sha1()
-                try:
-                    h.update(b'DIR\0')
-                    h.update(str(target_resolved.stat().st_mtime_ns).encode('ascii', errors='ignore'))
-                    h.update(b'\n')
-                except Exception:
-                    pass
-                for kind, name, mtime_ns in entries:
-                    h.update(kind.encode('ascii', errors='ignore'))
-                    h.update(b'\0')
-                    h.update(name.encode('utf-8', errors='replace'))
-                    h.update(b'\0')
-                    h.update(str(mtime_ns).encode('ascii', errors='ignore'))
-                    h.update(b'\n')
-
-                self._send_json({'exists': True, 'kind': 'dir', 'sig': h.hexdigest()})
-                return
-
-            if target_resolved.is_file():
-                try:
-                    sig = str(target_resolved.stat().st_mtime_ns)
-                except Exception:
-                    sig = '0'
-                self._send_json({'exists': True, 'kind': 'file', 'sig': sig})
-                return
-
-            self._send_json({'exists': False})
-        except Exception as e:
-            self._send_json({'exists': False, 'error': str(e)})
-    
-    def _send_json(self, data):
-        """JSONレスポンスを送信"""
-        import json
-        response = json.dumps(data, ensure_ascii=False)
-        self.send_response(200)
-        self.send_header('Content-Type', 'application/json; charset=utf-8')
-        self.send_no_cache_headers()
-        self.end_headers()
-        self.wfile.write(response.encode('utf-8'))
-    
-    def send_directory_listing(self, dir_path):
-        """指定されたディレクトリ直下のファイルとフォルダを表示"""
-        try:
-            rel_path = dir_path.relative_to(Path('.'))
-        except ValueError:
-            rel_path = Path('.')
-            
-        # ルートの場合はベースディレクトリ名を表示、それ以外は相対パスを表示
-        if str(rel_path) == '.':
-            display_path = self.base_dir_name if self.base_dir_name else '/'
-        else:
-            # パスデリミタを / で統一
-            display_path = self.base_dir_name + '/' + str(rel_path).replace('\\', '/')
-        
-        items = list(dir_path.iterdir())
-        
-        # フォルダとファイルを分離（ドットファイルは除外）、更新日時の新しい順にソート
-        dirs = [d for d in items if d.is_dir() and not d.name.startswith('.')]
-        dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
-        
-        files = [f for f in items if f.is_file() and f.suffix.lower() == '.md']
-        files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
-
-        content = f'<div class="file-list"><h1>📂 {display_path}</h1>'
-        
-        # 「一つ上へ」のリンク（ルート以外の場合）
-        if str(rel_path) != '.':
-            parent_link = '/' if str(rel_path.parent) == '.' else '/' + str(rel_path.parent).replace('\\', '/') + '/'
-            content += f'<a class="file-item dir-link" href="{parent_link}">⬆️ 一つ上の階層へ</a>'
-
-        if not dirs and not files:
-            content += '<p>表示できるファイルやフォルダがありません。</p>'
-        else:
-            # フォルダを表示
-            for d in dirs:
-                # リンクは常に末尾に / をつける
-                try:
-                    d_rel = d.relative_to(Path('.'))
-                    d_rel_str = str(d_rel).replace('\\', '/')
-                    content += f'<a class="file-item dir-link" href="/{d_rel_str}/">📁 {d.name}/</a>'
-                except ValueError:
-                    continue
-            
-            # ファイルを表示
-            for f in files:
-                try:
-                    f_rel = f.relative_to(Path('.'))
-                    f_rel_str = str(f_rel).replace('\\', '/')
-                    content += f'<a class="file-item" href="/{f_rel_str}">📝 {f.name}</a>'
-                except ValueError:
-                    continue
-        
-        content += '</div>'
-        
-        # ルートディレクトリのみ設定ボタンを表示
-        is_root = str(rel_path) == '.'
-        settings_section = SETTINGS_SECTION_HTML if is_root else ''
-        
-        html = HTML_TEMPLATE.format(
-            title=f'Index of {display_path}',
-            content=content,
-            settings_section=settings_section
-        )
-        
-        self.send_response(200)
-        self.send_header('Content-Type', 'text/html; charset=utf-8')
-        self.send_no_cache_headers()
-        self.end_headers()
-        self.wfile.write(html.encode('utf-8'))
-    
-    def send_markdown_as_html(self, file_path):
-        """MarkdownファイルをHTMLに変換して送信"""
-        try:
-            # ファイルのエンコーディングを自動検出して読み込み
-            # utf-8-sig を先に試行してBOM付きUTF-8を正しく処理する
-            encodings_to_try = ['utf-8-sig', 'utf-8', 'shift_jis', 'cp932', 'euc-jp', 'iso-2022-jp', 'latin-1']
-            md_content = None
-            used_encoding = None
-            
-            for encoding in encodings_to_try:
-                try:
-                    with open(file_path, 'r', encoding=encoding) as f:
-                        md_content = f.read()
-                    used_encoding = encoding
-                    break
-                except (UnicodeDecodeError, LookupError):
-                    continue
-            
-            if md_content is None:
-                # どのエンコーディングでも読めなかった場合は、バイナリモードで読み込んでエラー文字を置換
-                with open(file_path, 'rb') as f:
-                    raw_data = f.read()
-                md_content = raw_data.decode('utf-8', errors='replace')
-                used_encoding = 'utf-8 (with errors replaced)'
-            
-            # Mermaidブロックを一時的にプレースホルダーに置換
-            mermaid_blocks = []
-            def save_mermaid(match):
-                mermaid_blocks.append(match.group(1))
-                return f'<!--MERMAID_PLACEHOLDER_{len(mermaid_blocks) - 1}-->'
-            
-            # ```mermaid ... ``` ブロックを抽出
-            md_content = re.sub(
-                r'```mermaid\s*\n(.*?)```',
-                save_mermaid,
-                md_content,
-                flags=re.DOTALL
-            )
-            
-            # 強制改ページマーカー: 行頭から8つ以上のハイフンのみの行を検出
-            # 印刷時にpage-breakとして機能するdivに変換
-            # 注: markdownは ---（3つ以上）を<hr>に変換するため、
-            #     8つ以上のハイフンをHTMLコメント形式のプレースホルダーに置換
-            #     （___はMarkdownで斜体として解釈されるため使用不可）
-            md_content = re.sub(
-                r'^-{8,}$',
-                '<!--PAGEBREAK8-->',
-                md_content,
-                flags=re.MULTILINE
-            )
-            
-            if MARKDOWN_AVAILABLE:
-                # markdown パッケージを使用
-                # 拡張機能をインスタンスとして直接渡すことで、entry_points.txt の検索を回避
-                # （暗号化環境等でentry_points.txtが読めない場合の対策）
-                extensions = [
-                    FencedCodeExtension(),
-                    TableExtension(),
-                    TocExtension(slugify=githubish_slugify, separator='-'),
-                    CodeHiliteExtension(),
-                    Nl2BrExtension(),
-                    SaneListExtension(),
-                    AttrListExtension()
-                ]
-                # pymdownx.tildeもインスタンスとして追加（インストールされている場合のみ）
-                try:
-                    from pymdownx.tilde import DeleteSubExtension
-                    extensions.append(DeleteSubExtension())
-                except ImportError:
-                    pass  # pymdownxがインストールされていない場合は無視
-                
-                html_content = markdown.markdown(
-                    md_content,
-                    extensions=extensions
-                )
-            else:
-                # フォールバック: HTML変換
-                html_content = self.simple_markdown_to_html(md_content)
-            
-            # Mermaidブロックを復元（<pre class="mermaid">形式で）
-            for i, block in enumerate(mermaid_blocks):
-                html_content = html_content.replace(
-                    f'<!--MERMAID_PLACEHOLDER_{i}-->',
-                    f'<pre class="mermaid">{block}</pre>'
-                )
-            
-            # 強制改ページマーカーを復元
-            # markdownライブラリが<p>タグで囲む場合があるため、両方のパターンを処理
-            html_content = html_content.replace(
-                '<p><!--PAGEBREAK8--></p>',
-                '<div class="page-break"></div>'
-            )
-            html_content = html_content.replace(
-                '<!--PAGEBREAK8-->',
-                '<div class="page-break"></div>'
-            )
-            
-            # 見出しIDは markdown.extensions.toc が付与する（extension_configsでslugifyを調整）
-            
-            html = self.get_html_template().format(
-                title=file_path.name,
-                content=html_content,
-                header_mode='true' if self.header_mode else 'false'
-            )
-            
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/html; charset=utf-8')
-            self.send_no_cache_headers()
-            self.end_headers()
-            self.wfile.write(html.encode('utf-8'))
-            
-        except Exception as e:
-            self.send_error(500, f'Error: {str(e)}')
-
-    def send_no_cache_headers(self):
-        """キャッシュされないようHTTPヘッダーを追加"""
-        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
-        self.send_header('Pragma', 'no-cache')
-        self.send_header('Expires', '0')
-    
-    def get_html_template(self):
-        """HTMLテンプレートを返す（Ctrl+P印刷対応）"""
-        return '''<!DOCTYPE html>
+def get_print_html_template():
+    """Markdown表示用HTMLテンプレートを返す（Ctrl+P印刷対応）"""
+    return '''<!DOCTYPE html>
 <html lang="ja" style="color-scheme: light;">
 <head>
     <meta charset="UTF-8">
@@ -1362,17 +852,19 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             border-bottom: 1px solid var(--color-border-muted, #d0d7de) !important;
         }}
         /* H1/H2配下のコンテンツは少し左右にマージンを追加（設定で変更可能） */
-        body.mdf2h-presentation-mode .markdown-body h3,
-        body.mdf2h-presentation-mode .markdown-body h4,
-        body.mdf2h-presentation-mode .markdown-body h5,
-        body.mdf2h-presentation-mode .markdown-body h6,
-        body.mdf2h-presentation-mode .markdown-body p,
-        body.mdf2h-presentation-mode .markdown-body ul,
-        body.mdf2h-presentation-mode .markdown-body ol,
-        body.mdf2h-presentation-mode .markdown-body blockquote,
-        body.mdf2h-presentation-mode .markdown-body pre,
-        body.mdf2h-presentation-mode .markdown-body table,
-        body.mdf2h-presentation-mode .markdown-body dl {{
+        /* 直接の子要素のみ対象（ネストされたul/ol等に二重適用しない） */
+        body.mdf2h-presentation-mode .markdown-body > h3,
+        body.mdf2h-presentation-mode .markdown-body > h4,
+        body.mdf2h-presentation-mode .markdown-body > h5,
+        body.mdf2h-presentation-mode .markdown-body > h6,
+        body.mdf2h-presentation-mode .markdown-body > p,
+        body.mdf2h-presentation-mode .markdown-body > ul,
+        body.mdf2h-presentation-mode .markdown-body > ol,
+        body.mdf2h-presentation-mode .markdown-body > blockquote,
+        body.mdf2h-presentation-mode .markdown-body > pre,
+        body.mdf2h-presentation-mode .markdown-body > table,
+        body.mdf2h-presentation-mode .markdown-body > dl,
+        body.mdf2h-presentation-mode .markdown-body > nav {{
             margin-left: var(--mdf2h-presentation-margin);
             margin-right: var(--mdf2h-presentation-margin);
         }}
@@ -1444,6 +936,29 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         @media print {{
             .mdf2h-inline-toc {{
                 display: none;
+            }}
+        }}
+        
+        /* ========== 画像を含むリストアイテムのマーカー非表示 ========== */
+        .markdown-body li.mdf2h-img-item {{
+            list-style: none;
+        }}
+        
+        /* ========== 画像サイズ切替（クリック対応） ========== */
+        .markdown-body img.mdf2h-img-clickable {{
+            cursor: pointer;
+            transition: width 0.2s ease;
+        }}
+        .markdown-body img.mdf2h-img-medium {{
+            width: 90%;
+        }}
+        .markdown-body img.mdf2h-img-small {{
+            width: 80%;
+        }}
+        @media print {{
+            .markdown-body img.mdf2h-img-medium,
+            .markdown-body img.mdf2h-img-small {{
+                width: auto;
             }}
         }}
     </style>
@@ -1577,6 +1092,94 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             document.body.appendChild(img);
         }}
 
+        // ========== 画像を含むリストアイテムのマーカー非表示 ==========
+        function initImageListItems() {{
+            const article = document.querySelector('.markdown-body');
+            if (!article) return;
+            
+            const listItems = article.querySelectorAll('li');
+            listItems.forEach((li) => {{
+                // li の直接の子ノードを走査し、画像のみかどうかを判定
+                const children = Array.from(li.childNodes);
+                let hasImg = false;
+                let hasText = false;
+                
+                children.forEach((node) => {{
+                    if (node.nodeType === Node.TEXT_NODE) {{
+                        if (node.textContent.trim() !== '') {{
+                            hasText = true;
+                        }}
+                    }} else if (node.nodeType === Node.ELEMENT_NODE) {{
+                        if (node.tagName === 'IMG') {{
+                            hasImg = true;
+                        }} else if (node.tagName === 'P') {{
+                            // <p> 内に <img> のみが含まれているかチェック
+                            const pChildren = Array.from(node.childNodes);
+                            let pHasImg = false;
+                            let pHasText = false;
+                            pChildren.forEach((pNode) => {{
+                                if (pNode.nodeType === Node.TEXT_NODE) {{
+                                    if (pNode.textContent.trim() !== '') {{
+                                        pHasText = true;
+                                    }}
+                                }} else if (pNode.nodeType === Node.ELEMENT_NODE) {{
+                                    if (pNode.tagName === 'IMG') {{
+                                        pHasImg = true;
+                                    }} else {{
+                                        pHasText = true;
+                                    }}
+                                }}
+                            }});
+                            if (pHasImg && !pHasText) {{
+                                hasImg = true;
+                            }} else {{
+                                hasText = true;
+                            }}
+                        }} else {{
+                            hasText = true;
+                        }}
+                    }}
+                }});
+                
+                if (hasImg && !hasText) {{
+                    li.classList.add('mdf2h-img-item');
+                }}
+            }});
+        }}
+        
+        // ========== 画像クリックで3段階サイズ切替 ==========
+        function initImageSizeToggle() {{
+            const article = document.querySelector('.markdown-body');
+            if (!article) return;
+            
+            const images = article.querySelectorAll('img');
+            images.forEach((img) => {{
+                // ロゴ画像は除外
+                if (img.classList.contains('mdf2h-logo')) return;
+                // Mermaid内の画像は除外
+                if (img.closest('.mermaid') || img.closest('pre.mermaid')) return;
+                
+                img.classList.add('mdf2h-img-clickable');
+                
+                img.addEventListener('click', (e) => {{
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    if (img.classList.contains('mdf2h-img-small')) {{
+                        // 小 -> 大（デフォルト）
+                        img.classList.remove('mdf2h-img-small');
+                    }} else if (img.classList.contains('mdf2h-img-medium')) {{
+                        // 中 -> 小
+                        img.classList.remove('mdf2h-img-medium');
+                        img.classList.add('mdf2h-img-small');
+                    }} else {{
+                        // 大（デフォルト） -> 中
+                        img.classList.add('mdf2h-img-medium');
+                    }}
+                }});
+            }});
+        }}
+        
         // ========== コードブロックCopy機能 ==========
         let toastTimer = null;
         function showToast(message, ok = true) {{
@@ -2365,6 +1968,8 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             insertLogo();
             initCodeCopyButtons();
             insertTocUnderH1();
+            initImageListItems();
+            initImageSizeToggle();
             // DOM変更がすべて完了した後にプレゼン状態を復元
             restorePresentationState();
         }});
@@ -2379,639 +1984,3 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     </article>
 </body>
 </html>'''
-    
-    @staticmethod
-    def simple_markdown_to_html(md_content):
-        """Markdown→HTML変換"""
-        def apply_strikethrough(text):
-            return re.sub(r'~~(.*?)~~', r'<del>\1</del>', text)
-
-        lines = md_content.split('\n')
-        html_lines = []
-        in_code_block = False
-        code_lang = ''
-
-        for line in lines:
-            # 先頭の空白を無視して判定（インデント付き ``` などにも対応）
-            stripped = line.lstrip()
-            # コードブロック
-            if stripped.startswith('```'):
-                if not in_code_block:
-                    code_lang = stripped[3:].strip()
-                    html_lines.append(f'<pre><code class="language-{code_lang}">')
-                    in_code_block = True
-                else:
-                    html_lines.append('</code></pre>')
-                    in_code_block = False
-                continue
-            
-            if in_code_block:
-                html_lines.append(line.replace('<', '&lt;').replace('>', '&gt;'))
-                continue
-            
-            # 見出し
-            if stripped.startswith('#### '):
-                html_lines.append(f'<h4>{apply_strikethrough(stripped[5:])}</h4>')
-            elif stripped.startswith('### '):
-                html_lines.append(f'<h3>{apply_strikethrough(stripped[4:])}</h3>')
-            elif stripped.startswith('## '):
-                html_lines.append(f'<h2>{apply_strikethrough(stripped[3:])}</h2>')
-            elif stripped.startswith('# '):
-                html_lines.append(f'<h1>{apply_strikethrough(stripped[2:])}</h1>')
-            # リスト
-            elif stripped.startswith('- ') or stripped.startswith('* '):
-                html_lines.append(f'<li>{apply_strikethrough(stripped[2:])}</li>')
-            # 空行
-            elif line.strip() == '':
-                html_lines.append('<br>')
-            # 通常のテキスト
-            else:
-                html_lines.append(f'<p>{apply_strikethrough(line)}</p>')
-        
-        return '\n'.join(html_lines)
-
-
-def save_pid(port):
-    """PIDファイルにプロセスIDを保存し、最新のポートを記録"""
-    try:
-        PID_INSTANCES_DIR.mkdir(parents=True, exist_ok=True)
-        # ポートごとのPIDファイル
-        pid_file = PID_INSTANCES_DIR / f'port_{port}.pid'
-        with open(pid_file, 'w', encoding='utf-8') as f:
-            f.write(str(os.getpid()))
-        # 最新のポート番号を記録
-        with open(LATEST_PID_FILE, 'w', encoding='utf-8') as f:
-            f.write(str(port))
-    except Exception as e:
-        print(f"[!] PIDファイルの保存に失敗しました: {e}")
-
-
-def remove_pid(port):
-    """指定されたポートのPIDファイルを削除"""
-    try:
-        pid_file = PID_INSTANCES_DIR / f'port_{port}.pid'
-        if pid_file.exists():
-            pid_file.unlink()
-        
-        # 全てのPIDファイルがなくなったら最新ポート記録も消す
-        if not any(PID_INSTANCES_DIR.glob('port_*.pid')):
-            if LATEST_PID_FILE.exists():
-                LATEST_PID_FILE.unlink()
-    except Exception as e:
-        print(f"[!] PIDファイルの削除に失敗しました: {e}")
-
-
-def read_pid(port=None):
-    """
-    PIDファイルからプロセスIDを読み込む。
-    portがNoneの場合は最後に使用されたポートを使用する。
-    """
-    try:
-        if port is None:
-            if not LATEST_PID_FILE.exists():
-                # latestがない場合は、唯一存在するPIDファイルを探す
-                pids = list(PID_INSTANCES_DIR.glob('port_*.pid'))
-                if len(pids) == 1:
-                    port = int(pids[0].stem.split('_')[1])
-                else:
-                    return None, None
-            else:
-                with open(LATEST_PID_FILE, 'r', encoding='utf-8') as f:
-                    port = int(f.read().strip())
-        
-        pid_file = PID_INSTANCES_DIR / f'port_{port}.pid'
-        if not pid_file.exists():
-            return None, port
-            
-        with open(pid_file, 'r', encoding='utf-8') as f:
-            pid = int(f.read().strip())
-            return pid, port
-    except Exception as e:
-        print(f"[ERROR] PIDファイルの読み取りに失敗しました: {e}")
-    return None, None
-
-
-def get_pid_using_port(port):
-    """指定ポートをLISTENしているプロセスのPIDを取得（Windows/Linux対応）"""
-    import subprocess
-    try:
-        if sys.platform == 'win32':
-            # Windows: netstat -ano
-            # Windows日本語環境ではコマンド出力がCP932のため、encoding='oem'で読む
-            result = subprocess.run(
-                ['netstat', '-ano'],
-                capture_output=True,
-                encoding='oem',
-                errors='replace',
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
-            for line in result.stdout.split('\n'):
-                # "TCP    0.0.0.0:8000    0.0.0.0:0    LISTENING    12345"
-                # または "TCP    127.0.0.1:8000    ..."
-                if f':{port}' in line and 'LISTENING' in line:
-                    parts = line.split()
-                    if len(parts) >= 5:
-                        return int(parts[-1])
-        else:
-            # Linux/macOS: lsof
-            result = subprocess.run(
-                ['lsof', '-i', f':{port}', '-t'],
-                capture_output=True,
-                text=True
-            )
-            if result.stdout.strip():
-                return int(result.stdout.strip().split('\n')[0])
-    except Exception:
-        pass
-    return None
-
-
-def stop_service():
-    """起動中のすべてのサービスを停止"""
-    import subprocess
-    import time
-    
-    success_count = 0
-    stopped_ports = set()
-    
-    # 1. PIDファイルからプロセスを停止
-    if PID_INSTANCES_DIR.exists():
-        pid_files = list(PID_INSTANCES_DIR.glob('port_*.pid'))
-        for pid_file in pid_files:
-            try:
-                port = int(pid_file.stem.split('_')[1])
-                with open(pid_file, 'r', encoding='utf-8') as f:
-                    pid = int(f.read().strip())
-                
-                try:
-                    if sys.platform == 'win32':
-                        # Windows: taskkill /F /PID で強制終了（確認プロンプトなし）
-                        subprocess.run(
-                            ['taskkill', '/F', '/PID', str(pid)],
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                            creationflags=subprocess.CREATE_NO_WINDOW
-                        )
-                    else:
-                        # Linux/macOS: signal.SIGTERM
-                        os.kill(pid, signal.SIGTERM)
-                    
-                    print(f"[OK] サービスを停止しました (PID: {pid}, ポート: {port})")
-                    success_count += 1
-                    stopped_ports.add(port)
-                except (ProcessLookupError, OSError):
-                    print(f"[!] PID {pid} (ポート: {port}) は既に終了しています")
-                    stopped_ports.add(port)
-                
-                pid_file.unlink()
-            except Exception as e:
-                print(f"[ERROR] PIDファイル {pid_file.name} の処理中にエラー: {e}")
-                try:
-                    pid_file.unlink()
-                except:
-                    pass
-    
-    if LATEST_PID_FILE.exists():
-        LATEST_PID_FILE.unlink()
-    
-    # 2. 実際にポートを使用しているプロセスをスキャンして停止
-    ports_to_check = [DEFAULT_PORT] + FALLBACK_PORTS
-    for port in ports_to_check:
-        if port in stopped_ports:
-            continue
-        
-        pid = get_pid_using_port(port)
-        if pid:
-            try:
-                if sys.platform == 'win32':
-                    # Windows: taskkill /F /PID で強制終了
-                    subprocess.run(
-                        ['taskkill', '/F', '/PID', str(pid)],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        creationflags=subprocess.CREATE_NO_WINDOW
-                    )
-                else:
-                    # Linux/macOS: signal.SIGTERM
-                    os.kill(pid, signal.SIGTERM)
-                
-                print(f"[OK] ポート {port} を使用中のサービスを停止しました (PID: {pid})")
-                success_count += 1
-            except (ProcessLookupError, OSError):
-                pass
-    
-    if success_count > 0:
-        print(f"\n[*] 合計 {success_count} 個のサービスを停止しました")
-    else:
-        print("[*] 実行中のサービスはありません")
-    
-    return 0
-
-
-def start_service(args):
-    """サービスをバックグラウンドで起動（-d/--directory でルートを指定可能）"""
-    import subprocess
-    import time
-
-    # 子プロセスは --start を付けずに起動する（再帰起動防止）
-    try:
-        target_dir = resolve_target_directory(getattr(args, 'directory', '.'))
-    except Exception:
-        target_dir = Path(getattr(args, 'directory', '.'))
-
-    if not target_dir.exists():
-        print(f"[ERROR] ディレクトリが見つかりません: {getattr(args, 'directory', '.')}")
-        return 1
-    if not target_dir.is_dir():
-        print(f"[ERROR] 指定されたパスはディレクトリではありません: {getattr(args, 'directory', '.')}")
-        return 1
-
-    script_path = Path(__file__).resolve()
-    cmd = [
-        sys.executable,
-        str(script_path),
-        '--_child',
-        '--port', str(args.port),
-        '--directory', str(target_dir),
-    ]
-    if getattr(args, 'header', False):
-        cmd.append('--header')
-
-    # デタッチ実行時はログに出力してトラブルシュートできるようにする
-    logs_dir = PID_BASE_DIR / 'logs'
-    logs_dir.mkdir(parents=True, exist_ok=True)
-    log_path = logs_dir / f"markdownup_{int(time.time())}.log"
-
-    start_time_ns = time.time_ns()
-    with open(log_path, 'ab') as log_fp:
-        # Git Bash/Windows環境で stdout のデフォルトエンコーディングが cp1252 等になると、
-        # 日本語の print() で子プロセスが UnicodeEncodeError で即死する場合がある。
-        # 子プロセス側だけUTF-8を強制してログ出力が安全に行えるようにする。
-        child_env = os.environ.copy()
-        child_env['PYTHONUTF8'] = '1'
-        child_env['PYTHONIOENCODING'] = 'utf-8'
-
-        popen_kwargs = {
-            'stdin': subprocess.DEVNULL,
-            'stdout': log_fp,
-            'stderr': log_fp,
-            'env': child_env,
-        }
-        if sys.platform == 'win32':
-            creationflags = 0
-            creationflags |= getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
-            creationflags |= getattr(subprocess, 'DETACHED_PROCESS', 0)
-            creationflags |= getattr(subprocess, 'CREATE_NO_WINDOW', 0)
-            popen_kwargs['creationflags'] = creationflags
-        else:
-            popen_kwargs['start_new_session'] = True
-            popen_kwargs['close_fds'] = True
-
-        proc = subprocess.Popen(cmd, **popen_kwargs)
-
-    print(f"[OK] バックグラウンドで起動しました (PID: {proc.pid})")
-    print(f"   ログ: {log_path}")
-
-    # 子プロセスが起動してポートを書き込むまで少し待って表示用のURLを推測する
-    detected_port = None
-    for _ in range(30):  # 最大3秒
-        try:
-            if LATEST_PID_FILE.exists():
-                st = LATEST_PID_FILE.stat()
-                if st.st_mtime_ns >= start_time_ns:
-                    txt = LATEST_PID_FILE.read_text(encoding='utf-8').strip()
-                    if txt.isdigit():
-                        detected_port = int(txt)
-                        break
-        except Exception:
-            pass
-        time.sleep(0.1)
-
-    if detected_port:
-        print(f"   ローカル: http://localhost:{detected_port}")
-    else:
-        print(f"   ローカル: http://localhost:{args.port} (指定ポート、または代替ポート)")
-    print("   停止するには: python markdownup.py --stop")
-    return 0
-
-
-def build_argument_parser():
-    """argparse のパーサを構築（ヘルプ表示と実行時で共通化）"""
-    parser = argparse.ArgumentParser(
-        description='MarkdownファイルをHTML化するHTTPサーバー',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-使用例:
-  %(prog)s                      # ヘルプを表示
-  %(prog)s --header             # フォアグラウンド起動（カレントディレクトリを表示）
-  %(prog)s --start              # サービスをバックグラウンドで起動（-d ./ と同じ）
-  %(prog)s --start --port 8080  # バックグラウンド起動（ポート8080）
-  %(prog)s --start -d /path/to/docs --header  # 指定ディレクトリで起動（ヘッダー有効）
-  %(prog)s --stop               # サービスを停止
-
-機能:
-  MarkdownをHTMLに変換表示（Mermaid図表対応）
-  
-最適な表示を得るには:
-  pip install markdown pygments
-        """)
-
-    parser.add_argument(
-        '--port', '-p',
-        type=int,
-        default=DEFAULT_PORT,
-        help=f'ポート番号（--start と併用。デフォルト: {DEFAULT_PORT}）'
-    )
-
-    # 内部用: --start で起動した子プロセス識別（ヘルプには出さない）
-    parser.add_argument(
-        '--_child',
-        action='store_true',
-        help=argparse.SUPPRESS
-    )
-
-    parser.add_argument(
-        '--directory', '-d',
-        type=str,
-        default='.',
-        help='サーバーのルートディレクトリ（デフォルト: カレントディレクトリ）'
-    )
-
-    parser.add_argument(
-        '--stop',
-        action='store_true',
-        help='実行中のすべてのサービスを停止'
-    )
-
-    parser.add_argument(
-        '--start',
-        action='store_true',
-        help='バックグラウンドでサービスを起動（-d/--directory, --header を併用可）'
-    )
-
-    parser.add_argument(
-        '--header',
-        action='store_true',
-        help='画面右上にロゴ（images/logo.png）を表示、印刷時にcredits.mdを表示'
-    )
-
-    return parser
-
-
-def parse_arguments():
-    """コマンドライン引数をパース"""
-    parser = build_argument_parser()
-    return parser.parse_args()
-
-
-def find_available_port(preferred_port):
-    """利用可能なポートを探す"""
-    ports_to_try = [preferred_port] + FALLBACK_PORTS
-    
-    for port in ports_to_try:
-        try:
-            # ポートが使用可能か確認
-            # Windowsの場合はIPv4で確認（localhostで確認）
-            if sys.platform == 'win32':
-                test_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                # WindowsではSO_REUSEADDRが他と挙動が異なるため、チェック時は使わない
-                test_socket.bind(('localhost', port))
-                test_socket.close()
-            else:
-                # Linux/macOSの場合はIPv6で確認
-                socketserver.TCPServer.address_family = socket.AF_INET6
-                test_socket = socketserver.TCPServer(("::", port), None, bind_and_activate=False)
-                test_socket.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
-                test_socket.server_bind()
-                test_socket.server_close()
-            return port
-        except OSError as e:
-            # 10048: Address already in use
-            # 10013: Permission denied (Windows reserved port or admin required)
-            # 98: Address already in use (Linux)
-            if e.errno in (98, 10048, 10013):
-                if port == preferred_port:
-                    reason = "使用中" if e.errno != 10013 else "システム予約済み/権限不足"
-                    print(f"[!] ポート {port} は{reason}です。別のポートを探します...")
-                continue
-            else:
-                raise
-    
-    return None
-
-
-def get_working_directory():
-    """シェルのカレントディレクトリを取得（MINGW64のUNCパス対応）"""
-    # MINGW64/Git Bashでは PWD 環境変数にシェルのcwdが設定される
-    pwd = os.environ.get('PWD', '')
-    if pwd.startswith('//') or pwd.startswith('\\\\'):
-        # UNCパス形式の場合はそのまま使用
-        return Path(pwd)
-    # 通常はPythonのcwdを使用
-    return Path.cwd()
-
-
-def resolve_target_directory(directory_arg: str) -> Path:
-    """-d/--directory の値を実際のルートディレクトリへ解決（UNC配慮）"""
-    if directory_arg == '.':
-        target_dir = get_working_directory()
-    elif Path(directory_arg).is_absolute():
-        target_dir = Path(directory_arg)
-    else:
-        # 相対パスの場合はシェルのcwdを基準にする
-        target_dir = get_working_directory() / directory_arg
-
-    # UNCパス以外は resolve() で正規化
-    if not str(target_dir).startswith('//') and not str(target_dir).startswith('\\\\'):
-        target_dir = target_dir.resolve()
-
-    return target_dir
-
-
-def is_directory_only_invocation(argv):
-    """-d/--directory だけが指定された起動かどうか（値のトークンは除外して判定）"""
-    has_directory = False
-    other_options = []
-
-    i = 0
-    while i < len(argv):
-        tok = argv[i]
-        if tok in ('-d', '--directory'):
-            has_directory = True
-            i += 2  # 値もスキップ
-            continue
-        if tok.startswith('--directory='):
-            has_directory = True
-            i += 1
-            continue
-        if tok.startswith('-'):
-            other_options.append(tok)
-        i += 1
-
-    return has_directory and len(other_options) == 0
-
-
-def is_port_without_start_invocation(argv):
-    """--start なしで --port/-p が指定された起動かどうか（値のトークンは除外して判定）"""
-    has_start = False
-    has_port = False
-    has_child = False
-
-    i = 0
-    while i < len(argv):
-        tok = argv[i]
-        if tok == '--start':
-            has_start = True
-            i += 1
-            continue
-        if tok == '--_child':
-            has_child = True
-            i += 1
-            continue
-        if tok in ('-p', '--port'):
-            has_port = True
-            i += 2  # 値もスキップ
-            continue
-        if tok.startswith('--port='):
-            has_port = True
-            i += 1
-            continue
-        i += 1
-
-    return has_port and not has_start and not has_child
-
-
-def main():
-    """メイン処理"""
-    # 引数なしの場合はヘルプを表示
-    # ただし argcomplete の補完実行（_ARGCOMPLETE=1）時はここで抜けると補完が動かないため除外
-    if len(sys.argv) == 1 and os.environ.get("_ARGCOMPLETE") != "1":
-        parser = build_argument_parser()
-        parser.print_help()
-        return
-
-    # -d/--directory 単体での起動は廃止（ヘルプ表示に寄せる）
-    # ただし argcomplete の補完実行時はここで抜けない
-    if os.environ.get("_ARGCOMPLETE") != "1":
-        if is_directory_only_invocation(sys.argv[1:]):
-            parser = build_argument_parser()
-            parser.print_help()
-            return
-        if is_port_without_start_invocation(sys.argv[1:]):
-            parser = build_argument_parser()
-            parser.print_help()
-            return
-    
-    args = parse_arguments()
-    
-    # --stop オプションの処理
-    if args.stop:
-        return stop_service()
-
-    # --start オプションの処理
-    if args.start:
-        return start_service(args)
-    
-    # ディレクトリの検証と移動
-    # MINGW64/Git Bash環境でUNCパス（//server/share/...）をサポート
-    target_dir = resolve_target_directory(args.directory)
-    
-    if not target_dir.exists():
-        print(f"[ERROR] ディレクトリが見つかりません: {args.directory}")
-        return 1
-    if not target_dir.is_dir():
-        print(f"[ERROR] 指定されたパスはディレクトリではありません: {args.directory}")
-        return 1
-    
-    # 指定されたディレクトリに移動
-    try:
-        os.chdir(target_dir)
-        print(f"[*] ルートディレクトリ: {target_dir}")
-    except Exception as e:
-        print(f"[ERROR] ディレクトリへの移動に失敗しました: {e}")
-        return 1
-    
-    # ハンドラーの選択
-    handler = PrettyMarkdownHTTPRequestHandler
-    handler.header_mode = args.header
-    handler.base_dir_name = target_dir.name  # ベースディレクトリ名を設定
-    if args.header:
-        print(f"[*] ヘッダーモード有効: credits.md を印刷時に表示します")
-    if not MARKDOWN_AVAILABLE:
-        print("[!] markdownパッケージがインストールされていません")
-        print("   最適な表示のために以下をインストールしてください:")
-        print("   pip install markdown pygments\n")
-    
-    # 利用可能なポートを探す
-    port = find_available_port(args.port)
-    
-    if port is None:
-        print("[ERROR] 利用可能なポートが見つかりませんでした")
-        return 1
-    
-    # サーバー起動
-    print("=" * 60)
-    print(f"Markdownビューワーサーバー")
-    print("=" * 60)
-    
-    try:
-        # PIDを保存
-        save_pid(port)
-        
-        # サーバー起動（プラットフォームに応じて対応）
-        if sys.platform == 'win32':
-            # WindowsではIPv4で起動（localhostでリッスン）
-            socketserver.TCPServer.address_family = socket.AF_INET
-            with socketserver.TCPServer(("localhost", port), handler) as httpd:
-                if port != args.port:
-                    print(f"[OK] ポート {port} でサーバーを起動しました（代替ポート）")
-                else:
-                    print(f"[OK] ポート {port} でサーバーを起動しました")
-                
-                print(f"   ローカル:     http://localhost:{port}")
-                print(f"   ネットワーク: http://192.168.1.13:{port}")
-                print(f"\n[!] ブラウザでアクセスしてMarkdownファイルを表示できます")
-                print(f"   停止するには: python markdownup.py --stop")
-                print("   または Ctrl+C を押してください\n")
-                print("=" * 60 + "\n")
-                
-                httpd.serve_forever()
-        else:
-            # Linux/macOSではIPv6対応（IPv4もデュアルスタック）
-            socketserver.TCPServer.address_family = socket.AF_INET6
-            with socketserver.TCPServer(("::", port), handler, bind_and_activate=False) as httpd:
-                # IPv6ソケットでIPv4も受け入れる設定（デュアルスタック）
-                httpd.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
-                httpd.server_bind()
-                httpd.server_activate()
-                
-                if port != args.port:
-                    print(f"[OK] ポート {port} でサーバーを起動しました（代替ポート）")
-                else:
-                    print(f"[OK] ポート {port} でサーバーを起動しました")
-                
-                print(f"   ローカル:     http://localhost:{port}")
-                print(f"   ネットワーク: http://pi.local:{port}")
-                print(f"   IPv4:        http://192.168.1.13:{port}")
-                print(f"\n[!] ブラウザでアクセスしてMarkdownファイルを表示できます")
-                print(f"   (IPv4/IPv6 デュアルスタック対応)")
-                print(f"   停止するには: python markdownup.py --stop")
-                print("   または Ctrl+C を押してください\n")
-                print("=" * 60 + "\n")
-                
-                httpd.serve_forever()
-    except KeyboardInterrupt:
-        # Ctrl+C による終了
-        print("\n\n[*] サーバーを停止しています...")
-        remove_pid(port)
-        return 0
-    except Exception as e:
-        print(f"\n[ERROR] {e}")
-        remove_pid(port)
-        return 1
-    finally:
-        remove_pid(port)
-
-
-if __name__ == "__main__":
-    sys.exit(main() or 0)
