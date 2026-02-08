@@ -1513,7 +1513,6 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             setTimeout(scrollToHash, 500);
             setTimeout(scrollToHash, 1000);
             initAutoReload();
-            restorePresentationState();
         }});
         window.addEventListener('hashchange', scrollToHash);
         
@@ -2366,6 +2365,8 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             insertLogo();
             initCodeCopyButtons();
             insertTocUnderH1();
+            // DOM変更がすべて完了した後にプレゼン状態を復元
+            restorePresentationState();
         }});
         
         // プレゼンモード中のアンカーリンククリック処理
