@@ -137,8 +137,11 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(500, f'Save error: {e}')
     
     def send_credits_md(self):
-        """スクリプトディレクトリの credits.md をMarkdownとして返す"""
-        credits_path = self.script_dir / 'credits.md'
+        """CWD（サービングディレクトリ）の credits.md をMarkdownとして返す"""
+        credits_path = Path('.') / 'credits.md'
+        # #region agent log
+        print(f"[DEBUG-FIX] send_credits_md: credits_path={credits_path}, resolved={credits_path.resolve()}, exists={credits_path.exists()}")
+        # #endregion
         if credits_path.exists():
             try:
                 with open(credits_path, 'r', encoding='utf-8') as f:
@@ -154,13 +157,12 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(404, 'credits.md not found')
     
     def send_logo_image(self):
-        """スクリプトディレクトリの images/logo.png を返す"""
-        logo_path = self.script_dir / 'images' / 'logo.png'
+        """CWD（サービングディレクトリ）の images/logo.png を返す"""
+        logo_path = Path('.') / 'images' / 'logo.png'
         # #region agent log
-        print(f"[DEBUG-A] send_logo_image: script_dir={self.script_dir}, resolved={self.script_dir.resolve()}")
-        print(f"[DEBUG-A] send_logo_image: logo_path={logo_path}, exists={logo_path.exists()}")
-        print(f"[DEBUG-A] send_logo_image: cwd={Path('.').resolve()}, cwd_logo_exists={(Path('.') / 'images' / 'logo.png').exists()}")
-        print(f"[DEBUG-A] send_logo_image: __file__={Path(__file__)}")
+        print(f"[DEBUG-A] send_logo_image: logo_path={logo_path}, resolved={logo_path.resolve()}, exists={logo_path.exists()}")
+        print(f"[DEBUG-A] send_logo_image: cwd={Path('.').resolve()}")
+        print(f"[DEBUG-A] send_logo_image: old_script_dir={self.script_dir}, old_would_be={self.script_dir / 'images' / 'logo.png'}")
         # #endregion
         if logo_path.exists():
             try:
