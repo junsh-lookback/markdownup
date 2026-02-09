@@ -1,13 +1,47 @@
 # インストール手順
 
-## 問題: .txt ファイルが暗号化される環境向けの対応
+## 方法1: pip install（推奨 - どこからでも実行可能）
 
-一部のPC環境では、`.txt` 拡張子のファイルが自動的に暗号化されるため、
-標準的な `pip install -e .` によるインストールができない場合があります。
+プロジェクトのルートディレクトリで以下を実行します:
 
-この問題を回避するため、以下の方法でセットアップを行います。
+```bash
+pip install --user .
+```
 
-## セットアップ方法
+インストール後は、どのディレクトリからでも `markdownup` コマンドが使えます:
+
+```bash
+# ヘルプを表示（引数なしで実行）
+markdownup
+
+# サービスをバックグラウンドで起動（カレントディレクトリ）
+markdownup --start
+
+# ディレクトリを指定して起動
+markdownup --start -d /path/to/docs
+
+# ポートを指定して起動
+markdownup --start --port 8080
+
+# ヘッダーモードを有効にして起動
+markdownup --start --header
+
+# サービスを停止
+markdownup --stop
+```
+
+> **注意**: `pip install -e .`（editable インストール）は使用しないでください。
+> 理由は本ページ末尾の「なぜ pip install -e . が使えないのか？」を参照してください。
+
+### アンインストール
+
+```bash
+pip uninstall markdownup
+```
+
+## 方法2: 依存パッケージのみインストール（pip install が使えない環境向け）
+
+方法1 が失敗する場合の代替手段です。
 
 ### Linux/macOS の場合
 
@@ -18,75 +52,41 @@ bash install.sh
 または手動で:
 
 ```bash
-# 1. 依存パッケージをインストール
+# 依存パッケージをインストール
 python -m pip install --user markdown pygments
-
-# 2. エイリアスを設定(オプション)
-echo "alias markdownup='python $(pwd)/markdownup.py'" >> ~/.bashrc
-source ~/.bashrc
 ```
 
 ### Windows の場合
 
 ```cmd
-install.bat
-```
-
-または手動で:
-
-```cmd
-REM 1. 依存パッケージをインストール
+REM 依存パッケージをインストール
 python -m pip install --user markdown pygments
-
-REM 2. バッチファイルを作成(オプション)
-echo @echo off > markdownup.bat
-echo python "%CD%\markdownup.py" %%* >> markdownup.bat
 ```
 
-## 使用方法
+### 方法2 での使用方法
 
-セットアップ後、以下のように直接実行します:
+プロジェクトのルートディレクトリから `python -m markdownup` で実行します:
 
 ```bash
-# ヘルプを表示
-python markdownup.py --help
+# ヘルプを表示（引数なしで実行）
+python -m markdownup
 
-# サーバーを起動
-python markdownup.py -d ./
+# サービスをバックグラウンドで起動
+python -m markdownup --start
 
-# ポート指定
-python markdownup.py -d ./ --port 8080
+# ディレクトリを指定して起動
+python -m markdownup --start -d /path/to/docs
+
+# ポートを指定して起動
+python -m markdownup --start --port 8080
+
+# サービスを停止
+python -m markdownup --stop
 ```
-
-## エイリアス/ショートカットの作成(オプション)
-
-### Linux/macOS
-
-```bash
-# エイリアスを追加
-echo "alias markdownup='python /path/to/markdownup.py'" >> ~/.bashrc
-source ~/.bashrc
-
-# または、シンボリックリンクを作成
-ln -s /path/to/markdownup.py ~/.local/bin/markdownup
-chmod +x ~/.local/bin/markdownup
-```
-
-### Windows
-
-プロジェクトディレクトリに `markdownup.bat` を作成:
-
-```batch
-@echo off
-python "C:\path\to\markdownup.py" %*
-```
-
-このファイルをパスの通った場所(例: `C:\Windows\` や `%USERPROFILE%\bin`)にコピーすれば、
-どこからでも `markdownup` コマンドとして使用できます。
 
 ## トラブルシューティング
 
-### markdownパッケージが見つからない
+### markdown パッケージが見つからない
 
 ```bash
 python -m pip install --user markdown pygments
@@ -113,19 +113,27 @@ python --version
 python3 --version
 ```
 
-## なぜ pip install -e . が使えないのか?
+### モジュールが見つからないエラー（方法2 の場合）
 
-通常の `pip install -e .` によるeditableインストールでは、setuptools が
-`markdownup.egg-info/` ディレクトリ内に複数の `.txt` ファイルを生成します:
+`python -m markdownup` 実行時に `No module named markdownup` と表示される場合、
+プロジェクトのルートディレクトリ（`markdownup/` フォルダが存在するディレクトリ）で
+実行しているか確認してください:
 
-- `SOURCES.txt`
-- `dependency_links.txt`
-- `entry_points.txt`
-- `requires.txt`
-- `top_level.txt`
+```bash
+cd /path/to/markdownup-project
+python -m markdownup --start
+```
 
-これらのファイルが暗号化されてしまうと、次回のインストールやアンインストール時に
-エラーが発生します。
+## なぜ pip install -e . が使えないのか？
 
-そのため、このプロジェクトでは依存パッケージを直接インストールし、
-`markdownup.py` を直接実行する方法を推奨しています。
+`pip install -e .`（editable インストール）では、setuptools が
+**プロジェクトディレクトリ内**に `markdownup.egg-info/` を作成し、
+その中に複数の `.txt` ファイルを生成します（`SOURCES.txt`, `requires.txt` 等）。
+
+一部のPC環境では `.txt` ファイルが自動的に暗号化されるため、
+これらのファイルが暗号化されるとインストールやアンインストール時にエラーが発生します。
+
+本プロジェクトではビルドバックエンドに **hatchling** を採用しています。
+hatchling は setuptools と異なり、ビルド時にプロジェクトディレクトリ内に
+`.egg-info/`（`.txt` ファイル）を生成しないため、
+`pip install --user .` で問題なくインストールできます。
