@@ -1875,6 +1875,24 @@ def get_print_html_template():
             }});
         }}
         
+        function toggleAllH3() {{
+            const article = document.querySelector('.markdown-body');
+            if (!article) return;
+            
+            const h3s = article.querySelectorAll('h3');
+            if (h3s.length === 0) return;
+            
+            // 最初のH3の状態で全体の展開/折りたたみを決定
+            const shouldCollapse = !h3s[0].classList.contains('collapsed');
+            
+            h3s.forEach(h3 => {{
+                const isCurrentlyCollapsed = h3.classList.contains('collapsed');
+                if (isCurrentlyCollapsed !== shouldCollapse) {{
+                    toggleHeading(h3);
+                }}
+            }});
+        }}
+        
         function toggleHoverHeading() {{
             // フォーカス中の見出しを優先、なければホバー中の見出しを操作
             const active = document.activeElement;
@@ -2337,6 +2355,10 @@ def get_print_html_template():
                     case 'T':
                         e.preventDefault();
                         toggleAllH2();
+                        return;
+                    case '3':
+                        e.preventDefault();
+                        toggleAllH3();
                         return;
                 }}
             }}
