@@ -33,11 +33,44 @@ markdownup --stop
 > **注意**: `pip install -e .`（editable インストール）は使用しないでください。
 > 理由は本ページ末尾の「なぜ pip install -e . が使えないのか？」を参照してください。
 
+### Windows で markdownup コマンドが動かない場合
+
+Microsoft Store 版 Python など、ユーザー名に日本語や括弧が含まれるパスでは
+pip が生成する `.exe` ラッパーが正常に動作しないことがあります。
+
+`pip install --user .` は成功するが `markdownup` 実行時に
+`can't open file 'markdownup.py'` エラーが出る場合、以下の手順で対処してください:
+
+**1. pip の Scripts ディレクトリを確認**
+
+```cmd
+python -c "import sysconfig; print(sysconfig.get_path('scripts', 'nt_user'))"
+```
+
+**2. 壊れた .exe を削除し、代わりに .cmd ファイルを作成**
+
+上記で表示されたパスを `<SCRIPTS>` として:
+
+```cmd
+REM 壊れた .exe を削除
+del "<SCRIPTS>\markdownup.exe"
+
+REM .cmd ラッパーを作成
+echo @echo off > "<SCRIPTS>\markdownup.cmd"
+echo python -m markdownup %%* >> "<SCRIPTS>\markdownup.cmd"
+```
+
+これで `markdownup` コマンドが `.cmd` 経由で正しく動作するようになります。
+
 ### アンインストール
 
 ```bash
 pip uninstall markdownup
 ```
+
+> **注意（Windows）**: 上記の手順で `.cmd` を手動作成した場合、
+> `pip uninstall` では `.cmd` は削除されません。
+> 手動で `del "<SCRIPTS>\markdownup.cmd"` を実行してください。
 
 ## 方法2: 依存パッケージのみインストール（pip install が使えない環境向け）
 
