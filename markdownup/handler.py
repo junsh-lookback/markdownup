@@ -49,9 +49,13 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             return
         
         # 0.1. __logo__ エンドポイント（スクリプトディレクトリの images/logo.png を返す）
-        if path_str == '__logo__' and self.header_mode:
-            self.send_logo_image()
-            return
+        if path_str == '__logo__':
+            # #region agent log
+            print(f"[DEBUG-D] do_GET __logo__: header_mode={self.header_mode}")
+            # #endregion
+            if self.header_mode:
+                self.send_logo_image()
+                return
         
         # 0.5. __nav__ エンドポイント（ナビゲーション情報を返す）
         if path_str == '__nav__':
@@ -152,6 +156,12 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def send_logo_image(self):
         """スクリプトディレクトリの images/logo.png を返す"""
         logo_path = self.script_dir / 'images' / 'logo.png'
+        # #region agent log
+        print(f"[DEBUG-A] send_logo_image: script_dir={self.script_dir}, resolved={self.script_dir.resolve()}")
+        print(f"[DEBUG-A] send_logo_image: logo_path={logo_path}, exists={logo_path.exists()}")
+        print(f"[DEBUG-A] send_logo_image: cwd={Path('.').resolve()}, cwd_logo_exists={(Path('.') / 'images' / 'logo.png').exists()}")
+        print(f"[DEBUG-A] send_logo_image: __file__={Path(__file__)}")
+        # #endregion
         if logo_path.exists():
             try:
                 with open(logo_path, 'rb') as f:
@@ -164,6 +174,9 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 self.send_error(500, f'Error reading logo.png: {e}')
         else:
+            # #region agent log
+            print(f"[DEBUG-C] send_logo_image: 404! logo_path={logo_path}, script_dir={self.script_dir}")
+            # #endregion
             self.send_error(404, 'images/logo.png not found')
     
     def send_nav_info(self, current_path):
@@ -488,6 +501,9 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             
             # 見出しIDは markdown.extensions.toc が付与する（extension_configsでslugifyを調整）
             
+            # #region agent log
+            print(f"[DEBUG-D2] send_markdown_as_html: header_mode={self.header_mode}")
+            # #endregion
             html_output = self.get_html_template().format(
                 title=file_path.name,
                 content=html_content,

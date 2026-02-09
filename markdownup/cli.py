@@ -139,6 +139,11 @@ def main():
     handler = PrettyMarkdownHTTPRequestHandler
     handler.header_mode = args.header
     handler.base_dir_name = target_dir.name  # ベースディレクトリ名を設定
+    # #region agent log
+    print(f"[DEBUG-E] cli.main: args.header={args.header}, handler.header_mode={handler.header_mode}")
+    print(f"[DEBUG-E] cli.main: target_dir={target_dir}, cwd={Path('.').resolve()}")
+    print(f"[DEBUG-E] cli.main: script_dir={handler.script_dir}, resolved={handler.script_dir.resolve()}")
+    # #endregion
     if args.header:
         print(f"[*] ヘッダーモード有効: credits.md を印刷時に表示します")
     if not MARKDOWN_AVAILABLE:

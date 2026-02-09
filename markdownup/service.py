@@ -219,6 +219,11 @@ def start_service(args):
     if getattr(args, 'header', False):
         cmd.append('--header')
 
+    # #region agent log
+    print(f"[DEBUG-E2] start_service: cmd={cmd}")
+    print(f"[DEBUG-E2] start_service: args.header={getattr(args, 'header', False)}, target_dir={target_dir}")
+    # #endregion
+
     # デタッチ実行時はログに出力してトラブルシュートできるようにする
     logs_dir = PID_BASE_DIR / 'logs'
     logs_dir.mkdir(parents=True, exist_ok=True)
