@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .constants import DEFAULT_PORT, MARKDOWN_AVAILABLE
 from .handler import PrettyMarkdownHTTPRequestHandler
-from .service import save_pid, remove_pid, stop_service, start_service
+from .service import save_pid, remove_pid, stop_service, start_service, status_service
 from .utils import (
     find_available_port, resolve_target_directory,
     is_directory_only_invocation, is_port_without_start_invocation
@@ -28,6 +28,7 @@ def build_argument_parser():
   %(prog)s --start              # サービスをバックグラウンドで起動（-d ./ と同じ）
   %(prog)s --start --port 8080  # バックグラウンド起動（ポート8080）
   %(prog)s --start -d /path/to/docs --header  # 指定ディレクトリで起動（ヘッダー有効）
+  %(prog)s --status              # サービスの起動状態を確認
   %(prog)s --stop               # サービスを停止
 
 機能:
@@ -62,6 +63,12 @@ def build_argument_parser():
         '--stop',
         action='store_true',
         help='実行中のすべてのサービスを停止'
+    )
+
+    parser.add_argument(
+        '--status',
+        action='store_true',
+        help='サービスの起動状態を表示'
     )
 
     parser.add_argument(
@@ -108,6 +115,10 @@ def main():
     
     args = parse_arguments()
     
+    # --status オプションの処理
+    if args.status:
+        return status_service()
+
     # --stop オプションの処理
     if args.stop:
         return stop_service()

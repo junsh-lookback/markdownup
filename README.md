@@ -74,6 +74,12 @@ MarkdownをHTMLに変換して、ブラウザで直接表示します。拡張�
 
 `markdownup --start --port 8080 -d ./docs --header`
 
+**状態確認:**
+
+`markdownup --status`
+
+実行中のサービスのポート番号、PID、稼働状態を一覧表示します。
+
 **停止:**
 
 `markdownup --stop`
@@ -91,6 +97,9 @@ markdownup --start
 
 # バックグラウンド起動(特定ディレクトリ・ポート・ヘッダー表示)
 markdownup --start --port 8080 -d ./docs --header
+
+# サービスの起動状態を確認
+markdownup --status
 
 # サービスを停止
 markdownup --stop
@@ -162,6 +171,7 @@ markdownup --stop
 -p PORT, --port PORT        ポート番号を指定(--start と併用。デフォルト: 8000)
 -d DIR, --directory DIR     サーバーのルートディレクトリを指定(デフォルト: カレントディレクトリ)
 --header                    画面右上にロゴ表示、印刷時にcredits.md表示
+--status                    サービスの起動状態を表示
 --stop                      実行中のサービスを停止
 --start                     バックグラウンドでサービスを起動(-d/--directory, --header を併用可)
 ```
@@ -209,6 +219,7 @@ Pygmentsがインストールされている場合、コードブロックに自
 ### サービス管理機能
 
 *   **起動(バックグラウンド)**: `--start` オプションでカレントディレクトリ配下を公開して起動
+*   **状態確認**: `--status` オプションで実行中のサービスのポート・PID・稼働状態を表示
 *   **停止**: `--stop` オプションで実行中のサービスを停止
 *   **Ctrl+C**: キーボードショートカットで即座に停止(確認不要)
 *   PIDファイルで複数サービスの管理をサポート

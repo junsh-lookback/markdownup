@@ -663,6 +663,13 @@ def get_print_html_template():
                 margin: 0;
                 padding: 0;
             }}
+            .mdf2h-print-credits img {{
+                max-width: 150px;
+                height: auto;
+                display: block;
+                margin-left: auto;
+                margin-bottom: 4px;
+            }}
             
             /* 見出しマーク（H2〜H4）*/
             .markdown-body h2::before {{
@@ -1050,7 +1057,7 @@ def get_print_html_template():
     <script src="https://cdn.jsdelivr.net/npm/turndown-plugin-gfm@1.0.2/dist/turndown-plugin-gfm.min.js"></script>
     <script type="module">
         import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-        mermaid.initialize({{ startOnLoad: true }});
+        mermaid.initialize({{ startOnLoad: false }});
 
         function decodeHashId(raw) {{
             try {{
@@ -1695,8 +1702,8 @@ def get_print_html_template():
             const article = document.querySelector('.markdown-body');
             if (!article) return;
             
-            // 既存の印刷用要素を削除
-            document.querySelectorAll('.mdf2h-print-toc, .mdf2h-print-credits').forEach(el => el.remove());
+            // TOCは常に再生成（見出しが変わった場合に対応）
+            document.querySelectorAll('.mdf2h-print-toc').forEach(el => el.remove());
             
             // H1をタイトルとして取得（最初のH1）
             const h1 = article.querySelector('h1');
@@ -1743,19 +1750,30 @@ def get_print_html_template():
                 }}
             }}
             
-            // credits.md を読み込んで右上に表示
-            if (headerMode) {{
+            // credits.md を読み込んで右上に表示（既存のcreditsがあればスキップ）
+            // beforeprint時に非同期fetchが入ると、Chromeが描画を先行しロゴが消えるため、
+            // load時に作成済みのcreditsはそのまま再利用する
+            if (headerMode && !document.querySelector('.mdf2h-print-credits')) {{
                 try {{
                     const response = await fetch('/__credits__');
                     if (response.ok) {{
                         const creditsText = await response.text();
                         const creditsDiv = document.createElement('div');
                         creditsDiv.className = 'mdf2h-print-credits';
-                        creditsDiv.innerHTML = creditsText
+                        // ロゴ画像を印刷用creditsエリアに追加
+                        const printLogo = document.createElement('img');
+                        printLogo.src = '/__logo__';
+                        printLogo.alt = 'Logo';
+                        printLogo.onerror = () => {{ printLogo.style.display = 'none'; }};
+                        creditsDiv.appendChild(printLogo);
+                        creditsText
                             .split('\\n')
                             .filter(line => line.trim() !== '')
-                            .map(line => '<p>' + line + '</p>')
-                            .join('');
+                            .forEach(line => {{
+                                const p = document.createElement('p');
+                                p.textContent = line;
+                                creditsDiv.appendChild(p);
+                            }});
                         article.insertBefore(creditsDiv, article.firstChild);
                     }}
                 }} catch (e) {{
@@ -2423,7 +2441,13 @@ def get_print_html_template():
         }}
         
         // 初期化
-        window.addEventListener('load', () => {{
+        window.addEventListener('load', async () => {{
+            // mermaidの全ブロックレンダリング完了を待つ（プレゼンモード復元前に必須）
+            try {{
+                await mermaid.run();
+            }} catch (e) {{
+                console.warn('Mermaid rendering error:', e);
+            }}
             loadNavInfo();
             initFoldableHeadings();
             initFocusableElements();

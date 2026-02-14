@@ -190,6 +190,106 @@ def stop_service():
     return 0
 
 
+def _is_process_alive(pid):
+    """プロセスが生存しているか確認"""
+    try:
+        if sys.platform == 'win32':
+            import subprocess
+            result = subprocess.run(
+                ['tasklist', '/FI', f'PID eq {pid}', '/NH', '/FO', 'CSV'],
+                capture_output=True, text=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            # "python.exe","12345",... のような行があれば生存
+            return str(pid) in result.stdout
+        else:
+            os.kill(pid, 0)
+            return True
+    except (ProcessLookupError, PermissionError, OSError):
+        return False
+
+
+def status_service():
+    """起動中のサービス状態を表示"""
+    instances = []
+
+    # 1. PIDファイルから情報収集
+    if PID_INSTANCES_DIR.exists():
+        for pid_file in sorted(PID_INSTANCES_DIR.glob('port_*.pid')):
+            try:
+                port = int(pid_file.stem.split('_')[1])
+                with open(pid_file, 'r', encoding='utf-8') as f:
+                    pid = int(f.read().strip())
+
+                alive = _is_process_alive(pid)
+                # ポートで実際にLISTENしているPIDも確認
+                actual_pid = get_pid_using_port(port)
+                listening = actual_pid is not None
+
+                instances.append({
+                    'port': port,
+                    'pid': pid,
+                    'alive': alive,
+                    'listening': listening,
+                    'actual_pid': actual_pid,
+                    'source': 'pidfile',
+                })
+            except Exception:
+                pass
+
+    tracked_ports = {inst['port'] for inst in instances}
+
+    # 2. PIDファイルに記録されていないポートもスキャン
+    ports_to_check = [DEFAULT_PORT] + FALLBACK_PORTS
+    for port in ports_to_check:
+        if port in tracked_ports:
+            continue
+        pid = get_pid_using_port(port)
+        if pid:
+            instances.append({
+                'port': port,
+                'pid': pid,
+                'alive': True,
+                'listening': True,
+                'actual_pid': pid,
+                'source': 'portscan',
+            })
+
+    # 3. 結果表示
+    if not instances:
+        print("[*] 実行中のサービスはありません")
+        return 0
+
+    running_count = 0
+    print("[*] markdownup サービス状態")
+    print("=" * 60)
+
+    for inst in sorted(instances, key=lambda x: x['port']):
+        port = inst['port']
+        pid = inst['pid']
+
+        if inst['alive'] and inst['listening']:
+            status = '稼働中'
+            running_count += 1
+        elif inst['alive'] and not inst['listening']:
+            status = 'プロセス存在（ポート未使用）'
+        elif not inst['alive'] and inst['listening']:
+            status = f"ポート使用中（別PID: {inst['actual_pid']}）"
+        else:
+            status = '停止済み（PIDファイル残存）'
+
+        source_note = ''
+        if inst['source'] == 'portscan':
+            source_note = ' [PIDファイルなし]'
+
+        print(f"  ポート: {port} | PID: {pid} | {status}{source_note}")
+        print(f"  URL: http://localhost:{port}")
+        print("-" * 60)
+
+    print(f"[*] 合計 {running_count} 個のサービスが稼働中")
+    return 0
+
+
 def start_service(args):
     """サービスをバックグラウンドで起動（-d/--directory でルートを指定可能）"""
     import subprocess
