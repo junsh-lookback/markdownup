@@ -3,21 +3,75 @@
 
 # HTML テンプレート（ディレクトリ一覧表示用）
 HTML_TEMPLATE = """<!DOCTYPE html>
-<html lang="ja" style="color-scheme: light;">
+<html lang="ja" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.0/github-markdown.min.css">
     <style>
+        :root, [data-theme="light"] {{
+            color-scheme: light;
+            --mdf2h-bg: #ffffff;
+            --mdf2h-text: #24292f;
+            --mdf2h-code-bg: #f6f8fa;
+            --mdf2h-border: #d0d7de;
+            --mdf2h-border-heading: #eaecef;
+            --mdf2h-link: #0969da;
+            --mdf2h-table-even: #f6f8fa;
+            --mdf2h-file-item-bg: #f6f8fa;
+            --mdf2h-dir-link-bg: #eaf3ff;
+            --mdf2h-dir-link-border: #8ea1df;
+            --mdf2h-settings-btn-bg: #f6f8fa;
+            --mdf2h-settings-btn-hover: #e6f2ff;
+            --mdf2h-settings-dialog-bg: #ffffff;
+            --mdf2h-overlay-bg: rgba(0, 0, 0, 0.5);
+            --mdf2h-radio-hover: #f6f8fa;
+        }}
+        [data-theme="offwhite"] {{
+            color-scheme: light;
+            --mdf2h-bg: #FFF9EE;
+            --mdf2h-text: #24292f;
+            --mdf2h-code-bg: #f6f8fa;
+            --mdf2h-border: #d0d7de;
+            --mdf2h-border-heading: #eaecef;
+            --mdf2h-link: #0969da;
+            --mdf2h-table-even: #f6f8fa;
+            --mdf2h-file-item-bg: #f6f8fa;
+            --mdf2h-dir-link-bg: #eaf3ff;
+            --mdf2h-dir-link-border: #8ea1df;
+            --mdf2h-settings-btn-bg: #f6f8fa;
+            --mdf2h-settings-btn-hover: #e6f2ff;
+            --mdf2h-settings-dialog-bg: #FFF9EE;
+            --mdf2h-overlay-bg: rgba(0, 0, 0, 0.5);
+            --mdf2h-radio-hover: #f6f8fa;
+        }}
+        [data-theme="dark"] {{
+            color-scheme: dark;
+            --mdf2h-bg: #0d1117;
+            --mdf2h-text: #e6edf3;
+            --mdf2h-code-bg: #161b22;
+            --mdf2h-border: #30363d;
+            --mdf2h-border-heading: #30363d;
+            --mdf2h-link: #58a6ff;
+            --mdf2h-table-even: #161b22;
+            --mdf2h-file-item-bg: #161b22;
+            --mdf2h-dir-link-bg: #1c2333;
+            --mdf2h-dir-link-border: #3d5a99;
+            --mdf2h-settings-btn-bg: #21262d;
+            --mdf2h-settings-btn-hover: #30363d;
+            --mdf2h-settings-dialog-bg: #161b22;
+            --mdf2h-overlay-bg: rgba(0, 0, 0, 0.7);
+            --mdf2h-radio-hover: #21262d;
+        }}
         .markdown-body {{
             box-sizing: border-box;
             min-width: 200px;
             max-width: 980px;
             margin: 0 auto;
             padding: 45px;
-            background-color: #ffffff;
-            color: #24292f;
+            background-color: var(--mdf2h-bg);
+            color: var(--mdf2h-text);
         }}
         @media (max-width: 767px) {{
             .markdown-body {{
@@ -25,40 +79,38 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }}
         }}
         body {{
-            background-color: #ffffff;
-            color: #24292f;
+            background-color: var(--mdf2h-bg);
+            color: var(--mdf2h-text);
         }}
-        /* コードブロックのライトモード強制 */
         .markdown-body pre {{
-            background-color: #f6f8fa !important;
-            color: #24292f !important;
+            background-color: var(--mdf2h-code-bg) !important;
+            color: var(--mdf2h-text) !important;
         }}
         .markdown-body code {{
-            background-color: #f6f8fa !important;
-            color: #24292f !important;
+            background-color: var(--mdf2h-code-bg) !important;
+            color: var(--mdf2h-text) !important;
         }}
         .markdown-body pre code {{
             background-color: transparent !important;
         }}
-        /* テーブルのライトモード強制 */
         .markdown-body table {{
-            background-color: #ffffff !important;
+            background-color: var(--mdf2h-bg) !important;
         }}
         .markdown-body table tr {{
-            background-color: #ffffff !important;
-            border-top: 1px solid #d0d7de !important;
+            background-color: var(--mdf2h-bg) !important;
+            border-top: 1px solid var(--mdf2h-border) !important;
         }}
         .markdown-body table tr:nth-child(2n) {{
-            background-color: #f6f8fa !important;
+            background-color: var(--mdf2h-table-even) !important;
         }}
         .markdown-body table th,
         .markdown-body table td {{
             background-color: transparent !important;
-            color: #24292f !important;
-            border: 1px solid #d0d7de !important;
+            color: var(--mdf2h-text) !important;
+            border: 1px solid var(--mdf2h-border) !important;
         }}
         .markdown-body table th {{
-            background-color: #f6f8fa !important;
+            background-color: var(--mdf2h-code-bg) !important;
         }}
         .file-list {{
             max-width: 980px;
@@ -66,18 +118,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             padding: 20px;
         }}
         .file-list h1 {{
-            border-bottom: 2px solid #eaecef;
+            border-bottom: 2px solid var(--mdf2h-border-heading);
             padding-bottom: 10px;
         }}
         .file-item {{
             display: block;
             padding: 12px 16px;
             margin: 8px 0;
-            background-color: #f6f8fa;
-            border: 1px solid #d0d7de;
+            background-color: var(--mdf2h-file-item-bg);
+            border: 1px solid var(--mdf2h-border);
             border-radius: 6px;
             text-decoration: none;
-            color: #0969da;
+            color: var(--mdf2h-link);
             font-size: 14px;
         }}
         .dir-section {{
@@ -88,15 +140,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             margin-bottom: 10px;
         }}
         .dir-link {{
-            background-color: #eaf3ff;
-            border-color: #8ea1df;
+            background-color: var(--mdf2h-dir-link-bg);
+            border-color: var(--mdf2h-dir-link-border);
         }}
         
         /* 見出しホバー効果（折りたたみ可能な位置を示す） */
         .markdown-body h2:hover,
         .markdown-body h3:hover,
         .markdown-body h4:hover {{
-            color: #0969da;
+            color: var(--mdf2h-link);
             cursor: default;
         }}
         
@@ -107,16 +159,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             left: 20px;
             padding: 8px 16px;
             font-size: 14px;
-            background-color: #f6f8fa;
-            border: 1px solid #d0d7de;
+            background-color: var(--mdf2h-settings-btn-bg);
+            border: 1px solid var(--mdf2h-border);
             border-radius: 6px;
             cursor: pointer;
+            color: var(--mdf2h-text);
             z-index: 1000;
             transition: all 0.2s;
         }}
         .mdf2h-settings-btn:hover {{
-            background-color: #e6f2ff;
-            border-color: #0969da;
+            background-color: var(--mdf2h-settings-btn-hover);
+            border-color: var(--mdf2h-link);
         }}
         
         /* ========== 設定ダイアログ ========== */
@@ -127,7 +180,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             left: 0;
             width: 100%;
             height: 100%;
-            background-color: rgba(0, 0, 0, 0.5);
+            background-color: var(--mdf2h-overlay-bg);
             z-index: 2000;
         }}
         .mdf2h-settings-overlay.show {{
@@ -136,17 +189,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             align-items: center;
         }}
         .mdf2h-settings-dialog {{
-            background-color: #ffffff;
+            background-color: var(--mdf2h-settings-dialog-bg);
+            color: var(--mdf2h-text);
             border-radius: 8px;
-            padding: 24px;
-            min-width: 320px;
+            padding: 24px 32px;
+            min-width: 480px;
             max-width: 90%;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
         }}
         .mdf2h-settings-dialog h2 {{
             margin: 0 0 16px 0;
             font-size: 1.2rem;
-            border-bottom: 1px solid #eaecef;
+            border-bottom: 1px solid var(--mdf2h-border-heading);
             padding-bottom: 8px;
         }}
         .mdf2h-settings-group {{
@@ -162,6 +216,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             flex-direction: column;
             gap: 8px;
         }}
+        .mdf2h-settings-group .mdf2h-radio-row {{
+            flex-direction: row;
+            flex-wrap: wrap;
+        }}
         .mdf2h-settings-group .mdf2h-radio-option {{
             display: flex;
             align-items: center;
@@ -172,7 +230,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             transition: background-color 0.15s;
         }}
         .mdf2h-settings-group .mdf2h-radio-option:hover {{
-            background-color: #f6f8fa;
+            background-color: var(--mdf2h-radio-hover);
         }}
         .mdf2h-settings-group .mdf2h-radio-option input[type="radio"] {{
             margin: 0;
@@ -189,19 +247,20 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             transition: all 0.2s;
         }}
         .mdf2h-settings-buttons .cancel {{
-            background-color: #f6f8fa;
-            border: 1px solid #d0d7de;
+            background-color: var(--mdf2h-settings-btn-bg);
+            border: 1px solid var(--mdf2h-border);
+            color: var(--mdf2h-text);
         }}
         .mdf2h-settings-buttons .cancel:hover {{
-            background-color: #e6f2ff;
+            background-color: var(--mdf2h-settings-btn-hover);
         }}
         .mdf2h-settings-buttons .save {{
-            background-color: #0969da;
-            border: 1px solid #0969da;
+            background-color: var(--mdf2h-link);
+            border: 1px solid var(--mdf2h-link);
             color: #ffffff;
         }}
         .mdf2h-settings-buttons .save:hover {{
-            background-color: #0860ca;
+            opacity: 0.9;
         }}
     </style>
     <script type="module">
@@ -363,7 +422,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }} catch (e) {{
                 console.warn('Failed to load settings:', e);
             }}
-            return {{ h1h2Margin: 'none', contentMargin: 'normal' }};
+            return {{ theme: 'light', h1h2Margin: 'none', contentMargin: 'normal' }};
         }}
         
         function saveSettings(settings) {{
@@ -382,6 +441,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }};
         
         // グローバルスコープに公開（onclick/onchange属性から呼び出すため）
+        window.applyTheme = function(value) {{
+            const settings = getSettings();
+            settings.theme = value;
+            saveSettings(settings);
+            document.documentElement.setAttribute('data-theme', value);
+        }};
+        
         window.applyH1H2Margin = function(value) {{
             const settings = getSettings();
             settings.h1h2Margin = value;
@@ -401,6 +467,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             if (overlay) {{
                 const settings = getSettings();
                 // ラジオボタンの状態を復元
+                const themeRadio = document.querySelector(`input[name="theme"][value="${{settings.theme || 'light'}}"]`);
+                if (themeRadio) themeRadio.checked = true;
                 const h1h2Radio = document.querySelector(`input[name="h1h2margin"][value="${{settings.h1h2Margin || 'none'}}"]`);
                 if (h1h2Radio) h1h2Radio.checked = true;
                 const contentRadio = document.querySelector(`input[name="contentmargin"][value="${{settings.contentMargin || 'normal'}}"]`);
@@ -417,6 +485,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }};
         
         // 初期化
+        (function() {{
+            const settings = getSettings();
+            if (settings.theme) {{
+                document.documentElement.setAttribute('data-theme', settings.theme);
+            }}
+        }})();
+        
         window.addEventListener('load', () => {{
             loadNavInfo();
             initFocusableElements();
@@ -451,21 +526,29 @@ SETTINGS_SECTION_HTML = """<button class="mdf2h-settings-btn" onclick="openSetti
         <div class="mdf2h-settings-dialog">
             <h2>設定</h2>
             <div class="mdf2h-settings-group">
-                <label>プレゼン時の全体マージン（H1/H2含む）</label>
-                <div class="mdf2h-radio-group">
-                    <label class="mdf2h-radio-option"><input type="radio" name="h1h2margin" value="large" onchange="applyH1H2Margin(this.value)"><span>大きく (72px)</span></label>
-                    <label class="mdf2h-radio-option"><input type="radio" name="h1h2margin" value="normal" onchange="applyH1H2Margin(this.value)"><span>普通 (48px)</span></label>
-                    <label class="mdf2h-radio-option"><input type="radio" name="h1h2margin" value="small" onchange="applyH1H2Margin(this.value)"><span>小さく (24px)</span></label>
-                    <label class="mdf2h-radio-option"><input type="radio" name="h1h2margin" value="none" onchange="applyH1H2Margin(this.value)"><span>なし (0px)</span></label>
+                <label>配色テーマ</label>
+                <div class="mdf2h-radio-group mdf2h-radio-row">
+                    <label class="mdf2h-radio-option"><input type="radio" name="theme" value="light" onchange="applyTheme(this.value)"><span>ライト</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="theme" value="offwhite" onchange="applyTheme(this.value)"><span>オフホワイト</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="theme" value="dark" onchange="applyTheme(this.value)"><span>ダーク</span></label>
                 </div>
             </div>
             <div class="mdf2h-settings-group">
-                <label>プレゼン時の配下コンテンツマージン</label>
-                <div class="mdf2h-radio-group">
-                    <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="large" onchange="applyContentMargin(this.value)"><span>大きく (72px)</span></label>
-                    <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="normal" onchange="applyContentMargin(this.value)"><span>普通 (48px)</span></label>
-                    <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="small" onchange="applyContentMargin(this.value)"><span>小さく (24px)</span></label>
-                    <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="none" onchange="applyContentMargin(this.value)"><span>なし (0px)</span></label>
+                <label>スライド表示: 見出し（H1/H2）の左右余白</label>
+                <div class="mdf2h-radio-group mdf2h-radio-row">
+                    <label class="mdf2h-radio-option"><input type="radio" name="h1h2margin" value="large" onchange="applyH1H2Margin(this.value)"><span>広い</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="h1h2margin" value="normal" onchange="applyH1H2Margin(this.value)"><span>標準</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="h1h2margin" value="small" onchange="applyH1H2Margin(this.value)"><span>狭い</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="h1h2margin" value="none" onchange="applyH1H2Margin(this.value)"><span>なし</span></label>
+                </div>
+            </div>
+            <div class="mdf2h-settings-group">
+                <label>スライド表示: 本文の左右余白</label>
+                <div class="mdf2h-radio-group mdf2h-radio-row">
+                    <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="large" onchange="applyContentMargin(this.value)"><span>広い</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="normal" onchange="applyContentMargin(this.value)"><span>標準</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="small" onchange="applyContentMargin(this.value)"><span>狭い</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="none" onchange="applyContentMargin(this.value)"><span>なし</span></label>
                 </div>
             </div>
         </div>
@@ -475,21 +558,63 @@ SETTINGS_SECTION_HTML = """<button class="mdf2h-settings-btn" onclick="openSetti
 def get_print_html_template():
     """Markdown表示用HTMLテンプレートを返す（Ctrl+P印刷対応）"""
     return '''<!DOCTYPE html>
-<html lang="ja" style="color-scheme: light;">
+<html lang="ja" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/github-markdown-css/5.5.0/github-markdown.min.css">
     <style>
+        :root, [data-theme="light"] {{
+            color-scheme: light;
+            --mdf2h-bg: #ffffff;
+            --mdf2h-text: #24292f;
+            --mdf2h-code-bg: #f6f8fa;
+            --mdf2h-border: #d0d7de;
+            --mdf2h-border-heading: #eaecef;
+            --mdf2h-link: #0969da;
+            --mdf2h-table-even: #f6f8fa;
+        }}
+        [data-theme="offwhite"] {{
+            color-scheme: light;
+            --mdf2h-bg: #FFF9EE;
+            --mdf2h-text: #24292f;
+            --mdf2h-code-bg: #f6f8fa;
+            --mdf2h-border: #d0d7de;
+            --mdf2h-border-heading: #eaecef;
+            --mdf2h-link: #0969da;
+            --mdf2h-table-even: #f6f8fa;
+        }}
+        [data-theme="dark"] {{
+            color-scheme: dark;
+            --mdf2h-bg: #0d1117;
+            --mdf2h-text: #e6edf3;
+            --mdf2h-code-bg: #161b22;
+            --mdf2h-border: #30363d;
+            --mdf2h-border-heading: #30363d;
+            --mdf2h-link: #58a6ff;
+            --mdf2h-table-even: #161b22;
+        }}
+        @media print {{
+            :root {{
+                color-scheme: light !important;
+                --mdf2h-bg: #ffffff !important;
+                --mdf2h-text: #24292f !important;
+                --mdf2h-code-bg: #f6f8fa !important;
+                --mdf2h-border: #d0d7de !important;
+                --mdf2h-border-heading: #eaecef !important;
+                --mdf2h-link: #0969da !important;
+                --mdf2h-table-even: #f6f8fa !important;
+            }}
+        }}
         .markdown-body {{
             box-sizing: border-box;
             min-width: 200px;
             max-width: 980px;
             margin: 0 auto;
             padding: 45px;
-            background-color: #ffffff;
-            color: #24292f;
+            background-color: var(--mdf2h-bg);
+            color: var(--mdf2h-text);
         }}
         @media (max-width: 767px) {{
             .markdown-body {{
@@ -497,40 +622,38 @@ def get_print_html_template():
             }}
         }}
         body {{
-            background-color: #ffffff;
-            color: #24292f;
+            background-color: var(--mdf2h-bg);
+            color: var(--mdf2h-text);
         }}
-        /* コードブロックのライトモード強制 */
         .markdown-body pre {{
-            background-color: #f6f8fa !important;
-            color: #24292f !important;
+            background-color: var(--mdf2h-code-bg) !important;
+            color: var(--mdf2h-text) !important;
         }}
         .markdown-body code {{
-            background-color: #f6f8fa !important;
-            color: #24292f !important;
+            background-color: var(--mdf2h-code-bg) !important;
+            color: var(--mdf2h-text) !important;
         }}
         .markdown-body pre code {{
             background-color: transparent !important;
         }}
-        /* テーブルのライトモード強制 */
         .markdown-body table {{
-            background-color: #ffffff !important;
+            background-color: var(--mdf2h-bg) !important;
         }}
         .markdown-body table tr {{
-            background-color: #ffffff !important;
-            border-top: 1px solid #d0d7de !important;
+            background-color: var(--mdf2h-bg) !important;
+            border-top: 1px solid var(--mdf2h-border) !important;
         }}
         .markdown-body table tr:nth-child(2n) {{
-            background-color: #f6f8fa !important;
+            background-color: var(--mdf2h-table-even) !important;
         }}
         .markdown-body table th,
         .markdown-body table td {{
             background-color: transparent !important;
-            color: #24292f !important;
-            border: 1px solid #d0d7de !important;
+            color: var(--mdf2h-text) !important;
+            border: 1px solid var(--mdf2h-border) !important;
         }}
         .markdown-body table th {{
-            background-color: #f6f8fa !important;
+            background-color: var(--mdf2h-code-bg) !important;
         }}
         .file-list {{
             max-width: 980px;
@@ -538,18 +661,18 @@ def get_print_html_template():
             padding: 20px;
         }}
         .file-list h1 {{
-            border-bottom: 2px solid #eaecef;
+            border-bottom: 2px solid var(--mdf2h-border-heading);
             padding-bottom: 10px;
         }}
         .file-item {{
             display: block;
             padding: 12px 16px;
             margin: 8px 0;
-            background-color: #f6f8fa;
-            border: 1px solid #d0d7de;
+            background-color: var(--mdf2h-code-bg);
+            border: 1px solid var(--mdf2h-border);
             border-radius: 6px;
             text-decoration: none;
-            color: #0969da;
+            color: var(--mdf2h-link);
             font-size: 14px;
         }}
         .dir-section {{
@@ -560,8 +683,8 @@ def get_print_html_template():
             margin-bottom: 10px;
         }}
         .dir-link {{
-            background-color: #eaf3ff;
-            border-color: #8ea1df;
+            background-color: var(--mdf2h-code-bg);
+            border-color: var(--mdf2h-border);
         }}
         
         /* Mermaid図表: preのデフォルトスタイルをリセットしてSVG表示を正常化 */
@@ -577,7 +700,7 @@ def get_print_html_template():
         .markdown-body h2:hover,
         .markdown-body h3:hover,
         .markdown-body h4:hover {{
-            color: #0969da;
+            color: var(--mdf2h-link);
             cursor: default;
         }}
         
@@ -586,7 +709,7 @@ def get_print_html_template():
         .markdown-body h2:focus,
         .markdown-body h3:focus,
         .markdown-body h4:focus {{
-            color: #0969da;
+            color: var(--mdf2h-link);
             outline: none;
         }}
         
@@ -1966,8 +2089,15 @@ def get_print_html_template():
             }} catch (e) {{
                 console.warn('Failed to load settings:', e);
             }}
-            return {{ h1h2Margin: 'none', contentMargin: 'normal' }};
+            return {{ theme: 'light', h1h2Margin: 'none', contentMargin: 'normal' }};
         }}
+        
+        (function() {{
+            const settings = getSettings();
+            if (settings.theme) {{
+                document.documentElement.setAttribute('data-theme', settings.theme);
+            }}
+        }})();
         
         function applyPresentationMarginSetting() {{
             const settings = getSettings();

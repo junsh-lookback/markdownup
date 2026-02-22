@@ -29,8 +29,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     
     # クラス変数: --header オプションが有効かどうか
     header_mode = False
-    # スクリプトのディレクトリパス（credits.md の読み込みに使用）
-    # パッケージ構造: markdownup/handler.py → parent = markdownup/ → parent.parent = プロジェクトルート
+    # スクリプトのディレクトリパス
     script_dir = Path(__file__).parent.parent
     # 起動時に指定されたベースディレクトリ名
     base_dir_name = ''
@@ -43,12 +42,12 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         query_params = urllib.parse.parse_qs(parsed.query)
         local_path = Path('.') / path_str
         
-        # 0. __credits__ エンドポイント（CWDの credits.md を返す）
+        # 0. __credits__ エンドポイント（~/.markdownup/credits.md を返す）
         if path_str == '__credits__' and self.header_mode:
             self.send_credits_md()
             return
         
-        # 0.1. __logo__ エンドポイント（CWDの images/logo.png を返す）
+        # 0.1. __logo__ エンドポイント（~/.markdownup/images/logo.png を返す）
         if path_str == '__logo__' and self.header_mode:
             self.send_logo_image()
             return
@@ -133,8 +132,8 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_error(500, f'Save error: {e}')
     
     def send_credits_md(self):
-        """CWD（サービングディレクトリ）の credits.md をMarkdownとして返す"""
-        credits_path = Path('.') / 'credits.md'
+        """~/.markdownup/credits.md をMarkdownとして返す"""
+        credits_path = Path.home() / '.markdownup' / 'credits.md'
         if credits_path.exists():
             try:
                 with open(credits_path, 'r', encoding='utf-8') as f:
@@ -147,11 +146,11 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 self.send_error(500, f'Error reading credits.md: {e}')
         else:
-            self.send_error(404, 'credits.md not found')
+            self.send_error(404, '~/.markdownup/credits.md not found')
     
     def send_logo_image(self):
-        """CWD（サービングディレクトリ）の images/logo.png を返す"""
-        logo_path = Path('.') / 'images' / 'logo.png'
+        """~/.markdownup/images/logo.png を返す"""
+        logo_path = Path.home() / '.markdownup' / 'images' / 'logo.png'
         if logo_path.exists():
             try:
                 with open(logo_path, 'rb') as f:
@@ -164,7 +163,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             except Exception as e:
                 self.send_error(500, f'Error reading logo.png: {e}')
         else:
-            self.send_error(404, 'images/logo.png not found')
+            self.send_error(404, '~/.markdownup/images/logo.png not found')
     
     def send_nav_info(self, current_path):
         """ナビゲーション情報をJSONで返す（前後ページ、親ディレクトリ）"""
@@ -259,9 +258,9 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 return
 
             if target_resolved.is_dir():
-                # ディレクトリ一覧に影響するもの（直下の非隠しディレクトリ + .md ファイル）でシグネチャ生成
+                # ディレクトリ一覧に影響するもの（直下のディレクトリ + .md ファイル）でシグネチャ生成
                 items = list(target_resolved.iterdir())
-                dirs = [d for d in items if d.is_dir() and not d.name.startswith('.')]
+                dirs = [d for d in items if d.is_dir()]
                 files = [f for f in items if f.is_file() and f.suffix.lower() == '.md']
 
                 entries = []
@@ -333,8 +332,8 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         
         items = list(dir_path.iterdir())
         
-        # フォルダとファイルを分離（ドットファイルは除外）、更新日時の新しい順にソート
-        dirs = [d for d in items if d.is_dir() and not d.name.startswith('.')]
+        # フォルダとファイルを分離、更新日時の新しい順にソート
+        dirs = [d for d in items if d.is_dir()]
         dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
         
         files = [f for f in items if f.is_file() and f.suffix.lower() == '.md']
