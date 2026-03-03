@@ -180,14 +180,20 @@ markdownup --stop
 
 `--header` オプションを指定すると、以下の機能が有効になります:
 
-1.  **画面表示**: スクリプトディレクトリの `images/logo.png` を画面右上に表示
-2.  **印刷時**: スクリプトディレクトリの `credits.md` を最初のページ右上に表示
+1.  **画面表示**: `~/.markdownup/images/logo.png` を画面右上に表示
+2.  **印刷時**: `~/.markdownup/credits.md` を最初のページ右上に表示
 
 `# ロゴとcreditsを有効にして起動 markdownup --start --directory ./docs --header`
 
 必要なファイル:  
-\- `images/logo.png` - 画面右上に表示されるロゴ画像  
-\- `credits.md` - 印刷時に表示される著作権情報等
+\- `~/.markdownup/images/logo.png` - 画面右上に表示されるロゴ画像  
+\- `~/.markdownup/credits.md` - 印刷時に表示される著作権情報等
+
+`credits.md` では、固定文字列に加えて日時トークンを使えます:
+
+\- `{{TODAY}}` または `{{CURRENT_DATE}}` : 現在日付（例: `2026-03-03`）  
+\- `{{NOW}}` : 現在日時（例: `2026-03-03 22:30:15`）  
+\- `{{NOW:%Y/%m/%d}}` のように `strftime` 形式で表示フォーマット指定も可能
 
 ## 主な機能説明
 

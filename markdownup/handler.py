@@ -6,6 +6,7 @@ import http.server
 import json
 import re
 import urllib.parse
+from datetime import datetime
 from pathlib import Path
 
 from .constants import MARKDOWN_AVAILABLE
@@ -33,6 +34,9 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     script_dir = Path(__file__).parent.parent
     # 起動時に指定されたベースディレクトリ名
     base_dir_name = ''
+    _CREDITS_TOKEN_PATTERN = re.compile(
+        r'\{\{\s*(TODAY|CURRENT_DATE|NOW)\s*(?::([^{}]+))?\s*\}\}'
+    )
     
     def do_GET(self):
         """GETリクエスト処理"""
@@ -138,6 +142,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             try:
                 with open(credits_path, 'r', encoding='utf-8') as f:
                     content = f.read()
+                content = self.expand_credits_tokens(content)
                 self.send_response(200)
                 self.send_header('Content-Type', 'text/plain; charset=utf-8')
                 self.send_no_cache_headers()
@@ -147,6 +152,31 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_error(500, f'Error reading credits.md: {e}')
         else:
             self.send_error(404, '~/.markdownup/credits.md not found')
+
+    @classmethod
+    def expand_credits_tokens(cls, content):
+        """credits.md内の日時トークンを現在日時で展開する"""
+        now = datetime.now()
+
+        def _replace(match):
+            token = match.group(1)
+            format_str = match.group(2)
+
+            if token in ('TODAY', 'CURRENT_DATE'):
+                default_value = now.strftime('%Y-%m-%d')
+            else:  # NOW
+                default_value = now.strftime('%Y-%m-%d %H:%M:%S')
+
+            if not format_str:
+                return default_value
+
+            try:
+                return now.strftime(format_str)
+            except Exception:
+                # フォーマット指定が不正でも表示が壊れないようにする
+                return default_value
+
+        return cls._CREDITS_TOKEN_PATTERN.sub(_replace, content)
     
     def send_logo_image(self):
         """~/.markdownup/images/logo.png を返す"""
