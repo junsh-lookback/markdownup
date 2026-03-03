@@ -198,6 +198,16 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
     def send_nav_info(self, current_path):
         """ナビゲーション情報をJSONで返す（前後ページ、親ディレクトリ）"""
         import json
+
+        def to_url_path(path_obj, is_dir=False):
+            """Pathをブラウザ遷移用URLパスに変換（日本語など非ASCIIを含んでも安全）"""
+            if path_obj == Path('.'):
+                return '/'
+            path_str = str(path_obj).replace('\\', '/')
+            url_path = '/' + urllib.parse.quote(path_str, safe='/')
+            if is_dir and not url_path.endswith('/'):
+                url_path += '/'
+            return url_path
         
         result = {
             'parent': None,
@@ -207,7 +217,7 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         
         try:
             # パスを正規化（末尾の/を除去）
-            current_path = current_path.strip('/')
+            current_path = urllib.parse.unquote((current_path or '').split('?', 1)[0]).strip('/')
             if not current_path:
                 # ルートの場合
                 self._send_json(result)
@@ -223,14 +233,14 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                     if parent == Path('.'):
                         result['parent'] = '/'
                     else:
-                        result['parent'] = '/' + str(parent).replace('\\', '/') + '/'
+                        result['parent'] = to_url_path(parent, is_dir=True)
                 self._send_json(result)
                 return
             
             # ファイルの場合
             # 親ディレクトリ
             if current_item.parent != Path('.'):
-                result['parent'] = '/' + str(current_item.parent).replace('\\', '/') + '/'
+                result['parent'] = to_url_path(current_item.parent, is_dir=True)
             else:
                 result['parent'] = '/'
             
@@ -252,12 +262,12 @@ class PrettyMarkdownHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                     # 前のページ
                     if current_index > 0:
                         prev_file = md_files[current_index - 1]
-                        result['prevPage'] = '/' + str(prev_file).replace('\\', '/')
+                        result['prevPage'] = to_url_path(prev_file)
                     
                     # 次のページ
                     if current_index < len(md_files) - 1:
                         next_file = md_files[current_index + 1]
-                        result['nextPage'] = '/' + str(next_file).replace('\\', '/')
+                        result['nextPage'] = to_url_path(next_file)
                 except StopIteration:
                     pass
             
