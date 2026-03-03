@@ -239,6 +239,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .mdf2h-settings-group .mdf2h-radio-option span {{
             font-size: 14px;
         }}
+        .mdf2h-settings-group .mdf2h-checkbox-label {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            font-weight: normal;
+            margin-bottom: 0;
+        }}
+        .mdf2h-settings-group .mdf2h-checkbox-label input[type="checkbox"] {{
+            margin: 0;
+            cursor: pointer;
+        }}
+        .mdf2h-settings-group .mdf2h-checkbox-label span {{
+            font-size: 14px;
+        }}
+        .mdf2h-toc-level-group {{
+            transition: opacity 0.2s;
+        }}
         .mdf2h-settings-buttons button {{
             padding: 8px 16px;
             font-size: 14px;
@@ -422,7 +440,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             }} catch (e) {{
                 console.warn('Failed to load settings:', e);
             }}
-            return {{ theme: 'light', h1h2Margin: 'none', contentMargin: 'normal' }};
+            return {{ theme: 'light', h1h2Margin: 'none', contentMargin: 'normal', tocEnabled: true, tocLevel: 1 }};
         }}
         
         function saveSettings(settings) {{
@@ -462,6 +480,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             document.documentElement.style.setProperty('--mdf2h-presentation-margin', marginMap[value] || '24px');
         }};
         
+        window.applyTocEnabled = function(checked) {{
+            const settings = getSettings();
+            settings.tocEnabled = checked;
+            saveSettings(settings);
+            const levelGroup = document.querySelector('.mdf2h-toc-level-group');
+            if (levelGroup) {{
+                levelGroup.style.opacity = checked ? '1' : '0.4';
+                levelGroup.style.pointerEvents = checked ? 'auto' : 'none';
+            }}
+        }};
+        
+        window.applyTocLevel = function(value) {{
+            const settings = getSettings();
+            settings.tocLevel = parseInt(value, 10);
+            saveSettings(settings);
+        }};
+        
         window.openSettingsDialog = function() {{
             const overlay = document.querySelector('.mdf2h-settings-overlay');
             if (overlay) {{
@@ -473,6 +508,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 if (h1h2Radio) h1h2Radio.checked = true;
                 const contentRadio = document.querySelector(`input[name="contentmargin"][value="${{settings.contentMargin || 'normal'}}"]`);
                 if (contentRadio) contentRadio.checked = true;
+                // TOC設定の復元
+                const tocCheckbox = document.getElementById('tocEnabledCheckbox');
+                if (tocCheckbox) tocCheckbox.checked = settings.tocEnabled !== false;
+                const tocLevelRadio = document.querySelector(`input[name="toclevel"][value="${{settings.tocLevel || 1}}"]`);
+                if (tocLevelRadio) tocLevelRadio.checked = true;
+                const levelGroup = document.querySelector('.mdf2h-toc-level-group');
+                if (levelGroup) {{
+                    const enabled = settings.tocEnabled !== false;
+                    levelGroup.style.opacity = enabled ? '1' : '0.4';
+                    levelGroup.style.pointerEvents = enabled ? 'auto' : 'none';
+                }}
                 overlay.classList.add('show');
             }}
         }};
@@ -549,6 +595,17 @@ SETTINGS_SECTION_HTML = """<button class="mdf2h-settings-btn" onclick="openSetti
                     <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="normal" onchange="applyContentMargin(this.value)"><span>標準</span></label>
                     <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="small" onchange="applyContentMargin(this.value)"><span>狭い</span></label>
                     <label class="mdf2h-radio-option"><input type="radio" name="contentmargin" value="none" onchange="applyContentMargin(this.value)"><span>なし</span></label>
+                </div>
+            </div>
+            <div class="mdf2h-settings-group">
+                <label class="mdf2h-checkbox-label"><input type="checkbox" id="tocEnabledCheckbox" onchange="applyTocEnabled(this.checked)"><span>目次を表示する</span></label>
+            </div>
+            <div class="mdf2h-settings-group mdf2h-toc-level-group">
+                <label>目次の深さ</label>
+                <div class="mdf2h-radio-group mdf2h-radio-row">
+                    <label class="mdf2h-radio-option"><input type="radio" name="toclevel" value="1" onchange="applyTocLevel(this.value)"><span>H2</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="toclevel" value="2" onchange="applyTocLevel(this.value)"><span>H2 + H3</span></label>
+                    <label class="mdf2h-radio-option"><input type="radio" name="toclevel" value="3" onchange="applyTocLevel(this.value)"><span>H2 + H3 + H4</span></label>
                 </div>
             </div>
         </div>
@@ -1068,6 +1125,26 @@ def get_print_html_template():
             text-decoration: underline;
             color: #0969da;
         }}
+        .mdf2h-inline-toc li.toc-level-h3 {{
+            padding-left: 24px;
+        }}
+        .mdf2h-inline-toc li.toc-level-h3::before {{
+            font-size: 1em;
+            color: #8b949e;
+        }}
+        .mdf2h-inline-toc li.toc-level-h3 a {{
+            font-size: 1.1em;
+        }}
+        .mdf2h-inline-toc li.toc-level-h4 {{
+            padding-left: 48px;
+        }}
+        .mdf2h-inline-toc li.toc-level-h4::before {{
+            font-size: 0.85em;
+            color: #a8b2bd;
+        }}
+        .mdf2h-inline-toc li.toc-level-h4 a {{
+            font-size: 1em;
+        }}
         @media print {{
             .mdf2h-inline-toc {{
                 display: none;
@@ -1247,39 +1324,46 @@ def get_print_html_template():
         }});
         window.addEventListener('hashchange', scrollToHash);
         
-        // ========== インラインTOC（H1の下にH2一覧） ==========
+        // ========== インラインTOC（H1の下に見出し一覧） ==========
         function insertTocUnderH1() {{
             const article = document.querySelector('.markdown-body');
             if (!article) return;
             
-            // 既にTOCが挿入されていたらスキップ
-            if (article.querySelector('.mdf2h-inline-toc')) return;
+            // 既にTOCが挿入されていたら削除（設定変更で再生成するため）
+            const existing = article.querySelector('.mdf2h-inline-toc');
+            if (existing) existing.remove();
+            
+            const settings = getSettings();
+            if (settings.tocEnabled === false) return;
             
             // H1を探す
             const h1 = article.querySelector('h1');
             if (!h1) return;
             
-            // H2を全て取得
-            const h2s = article.querySelectorAll('h2');
-            if (h2s.length === 0) return;
+            const tocLevel = settings.tocLevel || 1;
+            const selectorMap = {{ 1: 'h2', 2: 'h2, h3', 3: 'h2, h3, h4' }};
+            const selector = selectorMap[tocLevel] || 'h2';
+            const headings = article.querySelectorAll(selector);
+            if (headings.length === 0) return;
             
             // TOCを作成
             const nav = document.createElement('nav');
             nav.className = 'mdf2h-inline-toc';
             const ul = document.createElement('ul');
+            const skipTexts = ['目次', 'TOC', 'Table of Contents'];
             
-            h2s.forEach((h2, index) => {{
-                // 「目次」という見出しはスキップ
-                const text = h2.textContent.trim();
-                if (text === '目次' || text === 'TOC' || text === 'Table of Contents') return;
+            headings.forEach((heading, index) => {{
+                const text = heading.textContent.trim();
+                if (skipTexts.includes(text)) return;
                 
-                // IDがなければ生成
-                if (!h2.id) {{
-                    h2.id = 'toc-h2-' + index;
+                if (!heading.id) {{
+                    heading.id = 'toc-' + heading.tagName.toLowerCase() + '-' + index;
                 }}
                 const li = document.createElement('li');
+                if (heading.tagName === 'H3') li.className = 'toc-level-h3';
+                if (heading.tagName === 'H4') li.className = 'toc-level-h4';
                 const a = document.createElement('a');
-                a.href = '#' + h2.id;
+                a.href = '#' + heading.id;
                 a.textContent = text;
                 li.appendChild(a);
                 ul.appendChild(li);
@@ -1832,44 +1916,46 @@ def get_print_html_template():
             const h1 = article.querySelector('h1');
             const docTitle = h1 ? h1.textContent : document.title;
             
-            // H2〜H4から階層的な目次を生成
-            const headings = article.querySelectorAll('h2, h3, h4');
-            if (headings.length > 0) {{
-                const tocDiv = document.createElement('div');
-                tocDiv.className = 'mdf2h-print-toc';
-                tocDiv.innerHTML = '<h2>目次</h2>';
-                // 印刷用目次のH2はフォーカス対象外にする
-                tocDiv.querySelector('h2').setAttribute('tabindex', '-1');
-                const ul = document.createElement('ul');
-                
-                headings.forEach((heading, index) => {{
-                    const li = document.createElement('li');
-                    const a = document.createElement('a');
-                    const id = heading.id || 'heading-' + index;
-                    if (!heading.id) heading.id = id;
-                    a.href = '#' + id;
-                    a.textContent = heading.textContent;
-                    li.appendChild(a);
+            const settings = getSettings();
+            if (settings.tocEnabled !== false) {{
+                const tocLevel = settings.tocLevel || 1;
+                const selectorMap = {{ 1: 'h2', 2: 'h2, h3', 3: 'h2, h3, h4' }};
+                const selector = selectorMap[tocLevel] || 'h2';
+                const headings = article.querySelectorAll(selector);
+                if (headings.length > 0) {{
+                    const tocDiv = document.createElement('div');
+                    tocDiv.className = 'mdf2h-print-toc';
+                    tocDiv.innerHTML = '<h2>目次</h2>';
+                    tocDiv.querySelector('h2').setAttribute('tabindex', '-1');
+                    const ul = document.createElement('ul');
                     
-                    // レベル別にクラスを設定
-                    if (heading.tagName === 'H2') {{
-                        li.className = 'toc-h2';
-                    }} else if (heading.tagName === 'H3') {{
-                        li.className = 'toc-h3';
-                    }} else if (heading.tagName === 'H4') {{
-                        li.className = 'toc-h4';
+                    headings.forEach((heading, index) => {{
+                        const li = document.createElement('li');
+                        const a = document.createElement('a');
+                        const id = heading.id || 'heading-' + index;
+                        if (!heading.id) heading.id = id;
+                        a.href = '#' + id;
+                        a.textContent = heading.textContent;
+                        li.appendChild(a);
+                        
+                        if (heading.tagName === 'H2') {{
+                            li.className = 'toc-h2';
+                        }} else if (heading.tagName === 'H3') {{
+                            li.className = 'toc-h3';
+                        }} else if (heading.tagName === 'H4') {{
+                            li.className = 'toc-h4';
+                        }}
+                        
+                        ul.appendChild(li);
+                    }});
+                    
+                    tocDiv.appendChild(ul);
+                    
+                    if (h1 && h1.nextSibling) {{
+                        article.insertBefore(tocDiv, h1.nextSibling);
+                    }} else {{
+                        article.insertBefore(tocDiv, article.firstChild);
                     }}
-                    
-                    ul.appendChild(li);
-                }});
-                
-                tocDiv.appendChild(ul);
-                
-                // H1の後に挿入（H1がなければ先頭に）
-                if (h1 && h1.nextSibling) {{
-                    article.insertBefore(tocDiv, h1.nextSibling);
-                }} else {{
-                    article.insertBefore(tocDiv, article.firstChild);
                 }}
             }}
             
@@ -2089,7 +2175,7 @@ def get_print_html_template():
             }} catch (e) {{
                 console.warn('Failed to load settings:', e);
             }}
-            return {{ theme: 'light', h1h2Margin: 'none', contentMargin: 'normal' }};
+            return {{ theme: 'light', h1h2Margin: 'none', contentMargin: 'normal', tocEnabled: true, tocLevel: 1 }};
         }}
         
         (function() {{
